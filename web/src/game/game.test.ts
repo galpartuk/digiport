@@ -417,6 +417,83 @@ describe('digivolve and de-digivolve', () => {
   })
 })
 
+describe('placeUnder', () => {
+  it('slides a hand card under a Digimon without changing the top card', () => {
+    const s = playToBattle(game, 0)
+    const host = s.players[0].battle[0]
+    const topId = host.cardId
+    const plug = s.players[0].hand[0]
+    const under = apply(s, act.placeUnder(0, plug.iid, host.iid))
+    const card = under.players[0].battle[0]
+
+    expect(card.cardId).toBe(topId)                  // the top card is untouched
+    expect(card.stack).toEqual([plug.cardId])
+    expect(countCards(under)).toBe(countCards(s))
+    assertIntegrity(under)
+  })
+
+  it('places at the bottom of the stack when asked', () => {
+    let s = playToBattle(game, 0)
+    const host = s.players[0].battle[0].iid
+    s = apply(s, act.digivolve(0, host, s.players[0].hand[0].iid))
+    const existing = [...s.players[0].battle[0].stack]
+    const plug = s.players[0].hand[0]
+
+    const top = apply(s, act.placeUnder(0, plug.iid, host, 'top'))
+    expect(top.players[0].battle[0].stack).toEqual([...existing, plug.cardId])
+
+    const bottom = apply(s, act.placeUnder(0, plug.iid, host, 'bottom'))
+    expect(bottom.players[0].battle[0].stack).toEqual([plug.cardId, ...existing])
+  })
+
+  it('carries a stacked Digimon down with its own sources, in order', () => {
+    let s = playToBattle(game, 0)
+    s = playToBattle(s, 0)
+    const [hostIid, movedIid] = s.players[0].battle.map((c) => c.iid)
+    s = apply(s, act.digivolve(0, movedIid, s.players[0].hand[0].iid))
+    const moved = s.players[0].battle.find((c) => c.iid === movedIid)!
+    const expected = [...moved.stack, moved.cardId]
+
+    const under = apply(s, act.placeUnder(0, movedIid, hostIid))
+    expect(under.players[0].battle).toHaveLength(1)
+    expect(under.players[0].battle[0].stack).toEqual(expected)
+    expect(countCards(under)).toBe(countCards(s))
+    assertIntegrity(under)
+  })
+
+  it('trashes a link card rather than burying it (4-9-6)', () => {
+    let s = playToBattle(game, 0)
+    s = playToBattle(s, 0)
+    const [hostIid, movedIid] = s.players[0].battle.map((c) => c.iid)
+    const plug = s.players[0].hand[0].iid
+    s = apply(s, act.attach(0, plug, movedIid))
+
+    const under = apply(s, act.placeUnder(0, movedIid, hostIid))
+    expect(under.players[0].trash.map((c) => c.iid)).toEqual([plug])
+    expect(countCards(under)).toBe(countCards(s))
+    assertIntegrity(under)
+  })
+
+  it("reaches an opponent's Digimon, which real effects do", () => {
+    let s = playToBattle(game, 0)
+    s = playToBattle(s, 1)
+    const mine = s.players[0].battle[0].iid
+    const theirs = s.players[1].battle[0].iid
+    expect(() => apply(s, act.placeUnder(0, theirs, mine))).not.toThrow()
+  })
+
+  it('refuses a hidden pile, a non-play target, and itself', () => {
+    const s = playToBattle(game, 0)
+    const host = s.players[0].battle[0].iid
+    expect(() => apply(s, act.placeUnder(0, s.players[0].deck[0].iid, host)))
+      .toThrow(/hidden pile/)
+    expect(() => apply(s, act.placeUnder(0, host, host))).toThrow(/under itself/)
+    const inHand = s.players[0].hand[0].iid
+    expect(() => apply(s, act.placeUnder(0, inHand, s.players[0].hand[1].iid)))
+      .toThrow(/in play/)
+  })
+})
+
 describe('leaving the field', () => {
   it('sends digivolution sources and attached cards to the trash too', () => {
     let s = playToBattle(game, 0)
@@ -876,6 +953,7 @@ describe('every action type is exercised', () => {
     run(act.move(0, played, 'battle'))
     run(act.digivolve(0, played, s.players[0].hand[0].iid))
     run(act.attach(0, s.players[0].hand[0].iid, played))
+    run(act.placeUnder(0, s.players[0].hand[0].iid, played))
     run(act.deDigivolve(0, played, 1))
     run(act.suspend(0, played))
     run(act.unsuspend(0, played))
@@ -901,7 +979,8 @@ describe('every action type is exercised', () => {
 
     const every: Action['t'][] = [
       'setup', 'mulligan', 'draw', 'shuffleDeck', 'shuffleSecurity', 'hatch', 'move', 'digivolve',
-      'deDigivolve', 'attach', 'suspend', 'unsuspend', 'unsuspendAll', 'setDp', 'setCounters',
+      'deDigivolve', 'attach', 'placeUnder', 'suspend', 'unsuspend', 'unsuspendAll',
+      'setDp', 'setCounters',
       'setMemory', 'payMemory', 'nextPhase', 'endTurn', 'attack', 'endAttack',
       'securityCheck', 'revealTop',
       'revealHand', 'flip', 'concede', 'chat', 'undoRequest', 'undoAccept', 'undoDecline',

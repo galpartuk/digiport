@@ -136,6 +136,15 @@ export type Action =
   | { t: 'digivolve'; by: PlayerId; sourceIid: Iid; cardIid: Iid }
   | { t: 'deDigivolve'; by: PlayerId; iid: Iid; n: number }
   | { t: 'attach'; by: PlayerId; iid: Iid; targetIid: Iid }
+  /**
+   * Slide a card underneath another as a digivolution card, without the top
+   * card changing. This is what DigiXros (7-2) and Assembly (7-3) do, and what
+   * effects like "place 1 of your opponent's level 3 or lower Digimon under
+   * another Digimon as its bottom digivolution card" (4-7-7) do. Digivolving
+   * puts a card on top; this is the other direction, and there was no way to
+   * express it.
+   */
+  | { t: 'placeUnder'; by: PlayerId; iid: Iid; targetIid: Iid; position?: 'top' | 'bottom' }
   | { t: 'suspend'; by: PlayerId; iid: Iid }
   | { t: 'unsuspend'; by: PlayerId; iid: Iid }
   | { t: 'unsuspendAll'; by: PlayerId }

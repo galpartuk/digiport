@@ -940,8 +940,14 @@ export function Board({ view, seat, index, dispatch, onUndo, onExit, refused }: 
     )
   }
 
+  /*
+    Comprehensive rules 1-4-2-3: "0 on the memory gauge is the center, the
+    numbers on the left represent your memory, and the numbers on the right
+    represent your opponent's memory." So the track runs from your 10 on the
+    left, down through 0, out to their 10 on the right -- not the other way.
+  */
   const gaugeStops: number[] = []
-  for (let v = -MEMORY_MAX; v <= MEMORY_MAX; v++) gaugeStops.push(v)
+  for (let v = MEMORY_MAX; v >= -MEMORY_MAX; v--) gaugeStops.push(v)
 
   return (
     <UiCtx.Provider value={ui}>
@@ -991,7 +997,7 @@ export function Board({ view, seat, index, dispatch, onUndo, onExit, refused }: 
             */}
             <div className="gauge-row">
               <div className="gauge-track">
-                <span className="gauge-end theirs">{nameOf(foeId)}</span>
+                <span className="gauge-end mine">You</span>
                 <div className="gauge">
                   {gaugeStops.map((v) => (
                     <button
@@ -1009,7 +1015,7 @@ export function Board({ view, seat, index, dispatch, onUndo, onExit, refused }: 
                     </button>
                   ))}
                 </div>
-                <span className="gauge-end mine">You</span>
+                <span className="gauge-end theirs">{nameOf(foeId)}</span>
               </div>
               <div className="cost-strip">
                 <span className="zone-label">Pay</span>
