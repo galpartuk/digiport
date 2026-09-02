@@ -1,0 +1,52 @@
+# Every push to main type-checks and builds the deck builder, runs the vitest
+# suite against the real card payload, and only then ships web/dist to the
+# digiport Cloudflare Worker.
+#
+# Needs two repository secrets (Settings -> Secrets and variables -> Actions):
+#   CLOUDFLARE_API_TOKEN   a token with the "Edit Cloudflare Workers" template
+#   CLOUDFLARE_ACCOUNT_ID  the account the digiport worker lives in
+# Without them the deploy step fails and nothing is published.
+
+name: Deploy
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:        # a deploy button, for re-shipping without a commit
+
+# One deploy at a time, and never cancel one halfway: two overlapping wrangler
+# runs would race to upload the same asset manifest.
+concurrency:
+  group: deploy
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      - name: Install
+        working-directory: web
+        run: npm ci
+
+      # tsc runs as part of the build, so this covers type errors too.
+      - name: Build
+        working-directory: web
+        run: npm run build
+
+      - name: Test
+        working-directory: web
+        run: npm test
+
+      - name: Deploy to Cloudflare Workers
+        run: npx --yes wrangler deploy
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}

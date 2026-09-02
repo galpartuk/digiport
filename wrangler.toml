@@ -1,0 +1,22 @@
+# Static-asset Worker for the Digiport deck builder, mirroring the tcgdles
+# setup. `npm run build` in web/ produces web/dist; this ships it.
+#
+# Deploys happen from GitHub Actions (.github/workflows/deploy.yml) using the
+# CLOUDFLARE_API_TOKEN and CLOUDFLARE_ACCOUNT_ID repository secrets.
+name = "digiport"
+compatibility_date = "2026-08-15"
+workers_dev = true
+
+[observability]
+enabled = true
+
+[assets]
+directory = "web/dist"
+# The deck builder is a single page; a share link like /#d=… never leaves it,
+# so any unknown path should still serve index.html rather than a 404.
+not_found_handling = "single-page-application"
+
+# Add the custom domain here once it is pointed at this worker:
+# [[routes]]
+# pattern = "digiport.example"
+# custom_domain = true
