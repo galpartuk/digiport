@@ -3,13 +3,11 @@ import {
   EMPTY_FILTERS, filterCards, loadCards, sortCards,
   type Card, type CardIndex, type Filters, type Meta,
 } from './cards'
-import {
-  addCard, count, loadDecks, newDeck, saveDecks, total,
-  EGG_SIZE, MAIN_SIZE, type Deck,
-} from './deck'
+import { addCard, count, loadDecks, newDeck, saveDecks, type Deck } from './deck'
 import { FilterPanel } from './components/Filters'
 import { CardGrid } from './components/CardGrid'
 import { CardDetail } from './components/CardDetail'
+import { DeckPanel } from './components/DeckPanel'
 
 export type Hover = { card: Card; x: number; y: number }
 export type HoverHandler = (card: Card | null, e?: React.MouseEvent) => void
@@ -63,6 +61,8 @@ export function App() {
   // read the live deck id from a ref rather than closing over it.
   const currentRef = useRef(deck.id)
   currentRef.current = deck.id
+  const decksRef = useRef(decks)
+  decksRef.current = decks
 
   useEffect(() => {
     const t = setTimeout(() => saveDecks(decks), 300)
@@ -75,6 +75,38 @@ export function App() {
 
   const onAdd = useCallback((card: Card) => bump(card, 1), [bump])
   const onRemove = useCallback((card: Card) => bump(card, -1), [bump])
+
+  const patchDeck = useCallback((name: string) => {
+    setDecks((ds) => ds.map((d) =>
+      (d.id === currentRef.current ? { ...d, name, updatedAt: Date.now() } : d)))
+  }, [])
+
+  const onNew = useCallback(() => {
+    const fresh = newDeck('New deck')
+    setDecks([...decksRef.current, fresh])
+    setCurrentId(fresh.id)
+  }, [])
+
+  const onDuplicate = useCallback(() => {
+    const source = decksRef.current.find((d) => d.id === currentRef.current)
+    if (!source) return
+    const copy = { ...newDeck(`${source.name} copy`), main: { ...source.main }, eggs: { ...source.eggs } }
+    setDecks([...decksRef.current, copy])
+    setCurrentId(copy.id)
+  }, [])
+
+  const onDelete = useCallback(() => {
+    const rest = decksRef.current.filter((d) => d.id !== currentRef.current)
+    // The panel is never empty: deleting the last deck leaves a fresh one.
+    const next = rest.length ? rest : [newDeck('New deck')]
+    setDecks(next)
+    setCurrentId(next[0].id)
+  }, [])
+
+  const onClear = useCallback(() => {
+    setDecks((ds) => ds.map((d) =>
+      (d.id === currentRef.current ? { ...d, main: {}, eggs: {}, updatedAt: Date.now() } : d)))
+  }, [])
 
   const onHover = useCallback<HoverHandler>((card, e) => {
     if (!card || !e) setHover(null)
@@ -124,35 +156,19 @@ export function App() {
         </div>
 
         <div className="col col-deck">
-          <div className="deck-head">
-            <div className="deck-name">{deck.name}</div>
-            <div className="deck-switch">
-              <select
-                className="field"
-                value={deck.id}
-                onChange={(e) => setCurrentId(e.target.value)}
-              >
-                {decks.map((d) => (
-                  <option key={d.id} value={d.id}>{d.name}</option>
-                ))}
-              </select>
-            </div>
-            <div className="counters">
-              <div className={`counter ${total(deck.main) === MAIN_SIZE ? 'good' : 'bad'}`}>
-                <b>{total(deck.main)}/{MAIN_SIZE}</b>
-                <span>Main</span>
-              </div>
-              <div className={`counter ${total(deck.eggs) <= EGG_SIZE ? 'good' : 'bad'}`}>
-                <b>{total(deck.eggs)}/{EGG_SIZE}</b>
-                <span>Eggs</span>
-              </div>
-            </div>
-          </div>
-          <div className="deck-scroll">
-            <div className="hint" style={{ padding: '0 6px' }}>
-              Click a card to add it, right-click to remove.
-            </div>
-          </div>
+          <DeckPanel
+            deck={deck}
+            decks={decks}
+            index={index}
+            onSelect={setCurrentId}
+            onRename={patchDeck}
+            onNew={onNew}
+            onDuplicate={onDuplicate}
+            onDelete={onDelete}
+            onClear={onClear}
+            onBump={bump}
+            onHover={onHover}
+          />
         </div>
       </div>
 

@@ -90,6 +90,32 @@ button, input, select, textarea {
   gap: 6px;
 }
 
+.deck-switch select {
+  flex: 1;
+  min-width: 0;
+}
+
+.deck-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 9px 12px;
+  border-top: 1px solid var(--line-soft);
+}
+
+.deck-actions .btn { flex: 1; }
+
+/* Inline replacement for window.confirm — it never steals focus from the app. */
+.confirm {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12.5px;
+  color: var(--ink-dim);
+}
+
+.confirm .spacer { flex: 1; }
+
 .workspace {
   display: grid;
   grid-template-columns: 236px minmax(0, 1fr) 356px;
@@ -441,6 +467,7 @@ button, input, select, textarea {
 
 .deck-scroll {
   flex: 1;
+  min-height: 200px;
   overflow-y: auto;
   padding: 8px 6px 30px;
 }
@@ -458,10 +485,10 @@ button, input, select, textarea {
 
 .deck-row {
   display: grid;
-  grid-template-columns: 22px 1fr auto;
+  grid-template-columns: 28px minmax(0, 1fr) auto;
   align-items: center;
   gap: 8px;
-  padding: 3px 6px;
+  padding: 2px 6px;
   border-radius: 5px;
   cursor: pointer;
   border-left: 3px solid transparent;
@@ -490,11 +517,43 @@ button, input, select, textarea {
   color: var(--ink-faint);
 }
 
-.deck-row .steps { display: none; gap: 2px; }
+.deck-row .thumb {
+  width: 28px;
+  aspect-ratio: 430 / 601;
+  object-fit: cover;
+  border-radius: 2px;
+  background: #121a27;
+  display: block;
+}
 
-.deck-row:hover .steps { display: flex; }
+.deck-row .sub {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-family: ui-monospace, Menlo, Consolas, monospace;
+  font-size: 10.5px;
+  color: var(--ink-faint);
+}
 
-.deck-row:hover .cost { display: none; }
+.deck-row .dots { display: flex; gap: 2px; }
+
+.deck-row .dots > i {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  display: block;
+}
+
+.deck-row .steps {
+  display: flex;
+  gap: 2px;
+  align-items: center;
+}
+
+.deck-row .steps .n { min-width: 16px; }
+
+/* Digi-Eggs and Digimon carry a colour stripe so a deck's shape reads at a glance. */
+.deck-row.tinted { border-left-color: var(--row-tint); }
 
 .step {
   width: 19px;
@@ -515,6 +574,15 @@ button, input, select, textarea {
 /* ------------------------------------------------------------- deck stats */
 
 .stats { padding: 9px 12px; border-top: 1px solid var(--line-soft); }
+
+/* Cost curve and level spread sit side by side so the card list keeps the room. */
+.stats-cols {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+
+.stats-cols .group { margin-bottom: 10px; }
 
 .bar-row {
   display: grid;
