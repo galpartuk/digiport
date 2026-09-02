@@ -14,7 +14,19 @@ type Payload = {
   e: Record<string, number>
 }
 
+/**
+ * The original share form, `#d=<code>`. Links in this shape are already out in
+ * the world, so it is still read — it is simply no longer emitted, because the
+ * app now routes on the hash and `#d=…` would read as a route.
+ */
 export const HASH_PREFIX = '#d='
+
+/**
+ * The form emitted now: the hash router's `/` route with the payload as an
+ * ordinary query parameter, so a share link and a route can coexist in the
+ * one hash the page gets.
+ */
+export const ROUTE_HASH_PREFIX = '#/?d='
 
 /** TS 5.7 made Uint8Array generic; BufferSource only accepts the ArrayBuffer one. */
 type Bytes = Uint8Array<ArrayBuffer>
@@ -80,10 +92,39 @@ function sanitise(pile: unknown): Record<string, number> {
 }
 
 export async function shareHash(deck: Deck): Promise<string> {
-  return HASH_PREFIX + (await encodeDeck(deck))
+  return ROUTE_HASH_PREFIX + (await encodeDeck(deck))
 }
 
-/** Pulls the payload out of a `#d=…` hash. Null when the hash is something else. */
+/** Splits `#/path?a=1` into its route and its query, tolerating a bare `#`. */
+function splitHash(hash: string): { path: string; query: URLSearchParams } {
+  const body = hash.startsWith('#') ? hash.slice(1) : hash
+  const q = body.indexOf('?')
+  if (q < 0) return { path: body, query: new URLSearchParams() }
+  return { path: body.slice(0, q), query: new URLSearchParams(body.slice(q + 1)) }
+}
+
+/**
+ * Pulls the payload out of a share hash, in either form: the current
+ * `#/?d=<code>` and the original `#d=<code>`. Null when the hash carries no
+ * deck — an ordinary route included.
+ */
 export function hashPayload(hash: string): string | null {
-  return hash.startsWith(HASH_PREFIX) ? hash.slice(HASH_PREFIX.length) : null
+  // Checked first: as a route this would read as the path `/d=<code>`, so the
+  // query parser below would never see it.
+  if (hash.startsWith(HASH_PREFIX)) return hash.slice(HASH_PREFIX.length) || null
+  return splitHash(hash).query.get('d') || null
+}
+
+/**
+ * The same hash with the deck payload taken out, so consuming a shared link
+ * leaves the route it arrived on intact. The original form carried nothing but
+ * the payload, so it collapses to the builder route.
+ */
+export function hashWithoutPayload(hash: string): string {
+  if (hash.startsWith(HASH_PREFIX)) return '#/'
+  const { path, query } = splitHash(hash)
+  if (!query.has('d')) return hash
+  query.delete('d')
+  const rest = query.toString()
+  return '#' + (path || '/') + (rest ? '?' + rest : '')
 }

@@ -1,6 +1,9 @@
 import { describe, expect, it } from 'vitest'
 import { addCard, copyLimit, newDeck, total } from './deck'
-import { decodeDeck, encodeDeck, hashPayload, HASH_PREFIX, shareHash } from './share'
+import {
+  decodeDeck, encodeDeck, hashPayload, hashWithoutPayload,
+  HASH_PREFIX, ROUTE_HASH_PREFIX, shareHash,
+} from './share'
 import { realIndex } from './testIndex'
 
 const index = realIndex()
@@ -46,16 +49,54 @@ describe('share links', () => {
     expect(back!.eggs).toEqual({})
   })
 
-  it('wraps and unwraps the #d= hash', async () => {
+  it('wraps and unwraps the hash it emits', async () => {
     const hash = await shareHash(sampleDeck())
-    expect(hash.startsWith(HASH_PREFIX)).toBe(true)
-    expect(hashPayload(hash)).toBe(hash.slice(HASH_PREFIX.length))
+    expect(hash.startsWith(ROUTE_HASH_PREFIX)).toBe(true)
+    expect(hashPayload(hash)).toBe(hash.slice(ROUTE_HASH_PREFIX.length))
     expect(await decodeDeck(hashPayload(hash)!)).not.toBeNull()
+  })
+
+  it('emits a hash the router can also read as the builder route', async () => {
+    const hash = await shareHash(sampleDeck())
+    expect(hash.slice(1).split('?')[0]).toBe('/')
+  })
+
+  it('still reads the original #d= links, which are already out in the world', async () => {
+    const code = await encodeDeck(sampleDeck())
+    const legacy = HASH_PREFIX + code
+    expect(hashPayload(legacy)).toBe(code)
+    expect(await decodeDeck(hashPayload(legacy)!)).not.toBeNull()
+  })
+
+  it('reads the payload out of a route hash whatever else the query holds', async () => {
+    const code = await encodeDeck(sampleDeck())
+    expect(hashPayload(`#/?d=${code}`)).toBe(code)
+    expect(hashPayload(`#/?from=chat&d=${code}`)).toBe(code)
+    expect(hashPayload(`#/play?mode=goldfish&d=${code}`)).toBe(code)
   })
 
   it('ignores a hash that is not a shared deck', () => {
     expect(hashPayload('')).toBeNull()
     expect(hashPayload('#play')).toBeNull()
+    expect(hashPayload('#/')).toBeNull()
+    expect(hashPayload('#/play?mode=hotseat&a=one&b=two')).toBeNull()
+    expect(hashPayload('#d=')).toBeNull()
+  })
+
+  it('strips the payload and leaves the route alone', async () => {
+    const code = await encodeDeck(sampleDeck())
+    expect(hashWithoutPayload(`#/?d=${code}`)).toBe('#/')
+    expect(hashWithoutPayload(`#/?d=${code}&from=chat`)).toBe('#/?from=chat')
+    expect(hashWithoutPayload(`#/play?mode=goldfish&d=${code}`)).toBe('#/play?mode=goldfish')
+    // The original form carried nothing but the deck, so it collapses to the
+    // builder route rather than to an empty hash the router cannot read.
+    expect(hashWithoutPayload(HASH_PREFIX + code)).toBe('#/')
+  })
+
+  it('leaves a hash with no payload untouched', () => {
+    expect(hashWithoutPayload('#/play?mode=hotseat&a=one&b=two'))
+      .toBe('#/play?mode=hotseat&a=one&b=two')
+    expect(hashWithoutPayload('#/')).toBe('#/')
   })
 
   it('returns null for a corrupted payload instead of throwing', async () => {

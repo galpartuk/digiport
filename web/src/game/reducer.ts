@@ -98,21 +98,62 @@ function clone(state: GameState): GameState {
 
 // ------------------------------------------------------------------ locating
 
-type Spot = { player: PlayerId; zone: Zone; index: number; instance: CardInstance }
+/**
+ * Where an instance sits. `host` is set when the card is plugged into another
+ * card rather than sitting in a zone of its own — the zone is then the host's.
+ */
+type Spot = {
+  player: PlayerId
+  zone: Zone
+  index: number
+  instance: CardInstance
+  host?: CardInstance
+}
 
 const SEARCH_ORDER: Zone[] =
   ['battle', 'breeding', 'hand', 'reveal', 'trash', 'security', 'deck', 'eggDeck']
 
-/** Where an instance currently sits. Only top-level zones — not inside `attached`. */
+/**
+ * Where an instance currently sits, including cards plugged into other cards.
+ * Attached cards used to be invisible here, which made them a black hole: once
+ * attached, an instance could never be detached, trashed or flipped again, and
+ * every action naming it failed with "no card with instance id".
+ */
 function locate(state: GameState, iid: Iid): Spot | null {
   for (const player of [0, 1] as PlayerId[]) {
     for (const zone of SEARCH_ORDER) {
       const list = state.players[player][zone]
       const index = list.findIndex((c) => c.iid === iid)
       if (index >= 0) return { player, zone, index, instance: list[index] }
+
+      for (const candidate of list) {
+        const found = locateAttached(candidate, iid)
+        if (found) return { player, zone, index: list.indexOf(candidate), ...found }
+      }
     }
   }
   return null
+}
+
+function locateAttached(
+  host: CardInstance,
+  iid: Iid,
+): { instance: CardInstance; host: CardInstance } | null {
+  for (const attached of host.attached) {
+    if (attached.iid === iid) return { instance: attached, host }
+    const deeper = locateAttached(attached, iid)
+    if (deeper) return deeper
+  }
+  return null
+}
+
+/** Takes the instance out of wherever it is, zone list or host. */
+function lift(state: GameState, spot: Spot) {
+  if (spot.host) {
+    spot.host.attached = spot.host.attached.filter((c) => c.iid !== spot.instance.iid)
+    return
+  }
+  state.players[spot.player][spot.zone].splice(spot.index, 1)
 }
 
 function need(state: GameState, action: Action, iid: Iid): Spot {
@@ -183,9 +224,12 @@ function relocate(
   faceDown?: boolean,
 ): CardInstance {
   const card = spot.instance
-  state.players[spot.player][spot.zone].splice(spot.index, 1)
+  lift(state, spot)
 
+  // A card being unplugged from a host is not itself leaving the field, so it
+  // keeps nothing to shed.
   const leavingField =
+    !spot.host &&
     (spot.zone === 'battle' || spot.zone === 'breeding') &&
     to !== 'battle' && to !== 'breeding'
 
@@ -378,7 +422,7 @@ export function apply(state: GameState, action: Action): GameState {
 
       const under = target.instance
       const top = source.instance
-      next.players[source.player][source.zone].splice(source.index, 1)
+      lift(next, source)
       // Bottom first: the absorbed Digimon's own sources go furthest down.
       under.stack = [...top.stack, ...under.stack, under.cardId]
       under.cardId = top.cardId
@@ -423,7 +467,7 @@ export function apply(state: GameState, action: Action): GameState {
       if (spot.instance.iid === target.instance.iid) {
         throw new IllegalAction(action, 'a card cannot attach to itself')
       }
-      next.players[spot.player][spot.zone].splice(spot.index, 1)
+      lift(next, spot)
       spot.instance.faceDown = false
       target.instance.attached.unshift(spot.instance)
       log(next, action.by, `${nameOf(next, action.by)} attaches ${spot.instance.cardId} ` +
@@ -504,6 +548,17 @@ export function apply(state: GameState, action: Action): GameState {
     case 'endTurn': {
       assertTurn(next, action)
       passTurn(next, TURN_START_MEMORY, `${nameOf(next, action.by)} ends their turn`)
+      break
+    }
+
+    case 'hatch': {
+      const me = next.players[action.by]
+      if (!me.eggDeck.length) throw new IllegalAction(action, 'your egg deck is empty')
+      if (me.breeding.length) throw new IllegalAction(action, 'your breeding area is occupied')
+      const egg = me.eggDeck.shift()!
+      egg.faceDown = false
+      me.breeding.push(egg)
+      log(next, action.by, `${nameOf(next, action.by)} hatches ${egg.cardId}`)
       break
     }
 

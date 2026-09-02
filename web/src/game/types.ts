@@ -102,6 +102,12 @@ export type Action =
   | { t: 'draw'; by: PlayerId; n: number }
   | { t: 'shuffleDeck'; by: PlayerId }
   | { t: 'shuffleSecurity'; by: PlayerId }
+  /**
+   * Top of your own egg deck into your breeding area. It needs its own action
+   * because the egg deck is hidden from everyone including its owner, so its
+   * cards have no instance id a client could name in a `move`.
+   */
+  | { t: 'hatch'; by: PlayerId }
   | { t: 'move'; by: PlayerId; iid: Iid; to: Zone; position?: Position; faceDown?: boolean }
   | { t: 'digivolve'; by: PlayerId; sourceIid: Iid; cardIid: Iid }
   | { t: 'deDigivolve'; by: PlayerId; iid: Iid; n: number }

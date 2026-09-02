@@ -101,12 +101,16 @@ export type Filters = {
   costs: number[]
   forms: string[]
   sets: string[]
+  /** Card traits — the bracketed [Dragon] / [Royal Knight] line, `card.types`. */
+  traits: string[]
+  /** true = a card must have every picked trait, false = any of them */
+  traitsExact: boolean
   includeUnreleased: boolean
 }
 
 export const EMPTY_FILTERS: Filters = {
   text: '', colors: [], colorsExact: false, types: [], levels: [], costs: [],
-  forms: [], sets: [], includeUnreleased: false,
+  forms: [], sets: [], traits: [], traitsExact: false, includeUnreleased: false,
 }
 
 export function filterCards(index: CardIndex, f: Filters): Card[] {
@@ -126,6 +130,14 @@ export function filterCards(index: CardIndex, f: Filters): Card[] {
       const hit = cost !== undefined && f.costs.some((v) => (v === 10 ? cost >= 10 : cost === v))
       if (!hit) return false
     }
+    if (f.traits.length) {
+      const traits = c.types
+      if (!traits) return false
+      const has = f.traitsExact
+        ? f.traits.every((t) => traits.includes(t))
+        : f.traits.some((t) => traits.includes(t))
+      if (!has) return false
+    }
     if (f.colors.length) {
       const has = f.colorsExact
         ? f.colors.every((col) => c.colors.includes(col))
@@ -138,6 +150,22 @@ export function filterCards(index: CardIndex, f: Filters): Card[] {
     }
     return true
   })
+}
+
+/** Cards carrying each trait, for the trait picker's counts. */
+export function traitCounts(index: CardIndex): Map<string, number> {
+  const counts = new Map<string, number>()
+  for (const card of index.all) {
+    for (const trait of card.types ?? []) counts.set(trait, (counts.get(trait) ?? 0) + 1)
+  }
+  return counts
+}
+
+/** Cards in each set, for the set picker's counts. */
+export function setCounts(index: CardIndex): Map<string, number> {
+  const counts = new Map<string, number>()
+  for (const card of index.all) counts.set(card.setCode, (counts.get(card.setCode) ?? 0) + 1)
+  return counts
 }
 
 export type SortKey = 'deck' | 'name' | 'number' | 'cost' | 'level' | 'dp' | 'released'

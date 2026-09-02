@@ -1,5 +1,8 @@
 import { describe, expect, it } from 'vitest'
-import { EMPTY_FILTERS, filterCards, imageUrl, sortCards, SORTS, type Filters } from './cards'
+import {
+  EMPTY_FILTERS, filterCards, imageUrl, setCounts, sortCards, SORTS, traitCounts,
+  type Filters,
+} from './cards'
 import { pick, realIndex } from './testIndex'
 
 const index = realIndex()
@@ -38,6 +41,42 @@ describe('filterCards', () => {
     const rookies = find({ forms: ['Rookie'] })
     expect(rookies.length).toBeGreaterThan(0)
     expect(rookies.every((c) => c.form === 'Rookie')).toBe(true)
+  })
+
+  it('filters by trait, matching any picked one by default', () => {
+    const knights = find({ traits: ['Royal Knight'] })
+    expect(knights.length).toBeGreaterThan(50)
+    expect(knights.every((c) => c.types?.includes('Royal Knight'))).toBe(true)
+
+    const either = find({ traits: ['Royal Knight', 'Dragonkin'] })
+    expect(either.length).toBeGreaterThan(knights.length)
+    expect(either.every((c) =>
+      c.types?.includes('Royal Knight') || c.types?.includes('Dragonkin'))).toBe(true)
+  })
+
+  it('requires every picked trait when traitsExact is on', () => {
+    const both = find({ traits: ['Royal Knight', 'X Antibody'], traitsExact: true })
+    expect(both.length).toBeGreaterThan(0)
+    expect(both.every((c) =>
+      c.types?.includes('Royal Knight') && c.types?.includes('X Antibody'))).toBe(true)
+    expect(both.length)
+      .toBeLessThan(find({ traits: ['Royal Knight', 'X Antibody'] }).length)
+  })
+
+  it('drops cards with no traits at all when a trait filter is on', () => {
+    expect(find({ traits: ['Dragon'] }).every((c) => (c.types ?? []).length > 0)).toBe(true)
+    expect(index.all.some((c) => !c.types)).toBe(true)
+  })
+
+  it('counts traits and sets for the pickers', () => {
+    const traits = traitCounts(index)
+    expect(traits.size).toBe(index.meta.types.length)
+    expect(traits.get('Royal Knight')).toBe(
+      index.all.filter((c) => c.types?.includes('Royal Knight')).length)
+
+    const sets = setCounts(index)
+    expect(sets.size).toBe(index.meta.sets.length)
+    expect([...sets.values()].reduce((a, b) => a + b, 0)).toBe(index.all.length)
   })
 
   it('filters by set', () => {

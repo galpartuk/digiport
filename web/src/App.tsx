@@ -3,24 +3,33 @@ import {
   EMPTY_FILTERS, filterCards, loadCards, sortCards, SORTS,
   type Card, type CardIndex, type Filters, type Meta, type SortKey,
 } from './cards'
-import { addCard, count, loadDecks, newDeck, saveDecks, type Deck } from './deck'
+import { Link } from 'react-router-dom'
+import { addCard, count, loadDecks, newDeck, saveDecks, validate, type Deck } from './deck'
 import { FilterPanel } from './components/Filters'
 import { CardGrid } from './components/CardGrid'
 import { CardDetail } from './components/CardDetail'
 import { DeckPanel } from './components/DeckPanel'
 import { DeckIO, type IoTab } from './components/DeckIO'
-import { decodeDeck, hashPayload } from './share'
+import { decodeDeck, hashPayload, hashWithoutPayload } from './share'
 
-/** Reads a shared deck out of the URL and clears it, so it is only ever used once. */
+/**
+ * Reads a shared deck out of the URL and clears it, so it is only ever used
+ * once. Only the payload is removed: the route it arrived on stays in the
+ * hash, because the hash is now the router's as well.
+ */
 function takeSharedCode(): string | null {
   const code = hashPayload(location.hash)
-  if (code) history.replaceState(null, '', location.pathname + location.search)
+  if (code) {
+    const rest = hashWithoutPayload(location.hash)
+    history.replaceState(null, '', location.pathname + location.search + rest)
+  }
   return code
 }
 
-// Taken before React mounts, so a StrictMode double effect cannot import the
-// same shared deck twice.
-const sharedCode = takeSharedCode()
+// Taken before React mounts — and before the router reads the hash — so a
+// StrictMode double effect cannot import the same shared deck twice and a
+// `#d=` link cannot be mistaken for a route.
+let sharedCode = takeSharedCode()
 
 export type Hover = { card: Card; x: number; y: number }
 export type HoverHandler = (card: Card | null, e?: React.MouseEvent) => void
@@ -139,18 +148,28 @@ export function App() {
   // on a cold load, and equally when one is pasted into an already-open tab.
   useEffect(() => {
     let live = true
-    const take = (code: string | null) => {
+    /**
+     * The pending code is cleared only once a deck has actually been adopted.
+     * StrictMode throws the first effect pass away, and the builder now
+     * unmounts whenever the board route is open, so "read it out of the URL"
+     * and "used it" have to be two separate moments.
+     */
+    const pull = () => {
+      const fresh = takeSharedCode()
+      if (fresh) sharedCode = fresh
+      const code = sharedCode
       if (!code) return
       decodeDeck(code).then((shared) => {
-        if (live && shared) adoptDeck(shared, 'new')
+        if (!live || !shared) return
+        if (sharedCode === code) sharedCode = null
+        adoptDeck(shared, 'new')
       })
     }
-    take(sharedCode)
-    const onHashChange = () => take(takeSharedCode())
-    window.addEventListener('hashchange', onHashChange)
+    pull()
+    window.addEventListener('hashchange', pull)
     return () => {
       live = false
-      window.removeEventListener('hashchange', onHashChange)
+      window.removeEventListener('hashchange', pull)
     }
   }, [adoptDeck])
 
@@ -164,6 +183,13 @@ export function App() {
     [index, filters, sort, sortDesc],
   )
 
+  // Playable means legal: the errors are the same ones the deck panel lists,
+  // so the button and the problem list can never disagree.
+  const playable = useMemo(
+    () => (index ? !validate(deck, index).some((p) => p.level === 'error') : false),
+    [index, deck],
+  )
+
   if (!index) return <div className="loading">Loading cards…</div>
 
   return (
@@ -173,12 +199,29 @@ export function App() {
           Digi<em>port</em> <span>deck builder</span>
         </div>
         <div className="spacer" />
+        {playable ? (
+          <Link
+            className="btn btn-primary btn-sm"
+            to={`/play?mode=goldfish&deck=${encodeURIComponent(deck.id)}`}
+            title={`Goldfish “${deck.name}” — play it against an empty seat`}
+          >
+            Play
+          </Link>
+        ) : (
+          <button
+            className="btn btn-sm"
+            disabled
+            title="Playable once the deck is legal: 50 main-deck cards, at most 5 Digi-Eggs."
+          >
+            Play
+          </button>
+        )}
         <span className="result-count">{index.meta.count.toLocaleString()} cards</span>
       </div>
 
       <div className="workspace">
         <div className="col col-filters">
-          <FilterPanel filters={filters} meta={index.meta} onChange={setFilters} />
+          <FilterPanel filters={filters} index={index} onChange={setFilters} />
         </div>
 
         <div className="col">

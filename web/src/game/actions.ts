@@ -18,6 +18,7 @@ export const act = {
   draw: (by: PlayerId, n = 1): Action => ({ t: 'draw', by, n }),
   shuffleDeck: (by: PlayerId): Action => ({ t: 'shuffleDeck', by }),
   shuffleSecurity: (by: PlayerId): Action => ({ t: 'shuffleSecurity', by }),
+  hatch: (by: PlayerId): Action => ({ t: 'hatch', by }),
 
   move: (
     by: PlayerId,

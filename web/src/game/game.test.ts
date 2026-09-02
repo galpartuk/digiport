@@ -432,6 +432,36 @@ describe('leaving the field', () => {
   })
 })
 
+describe('hatch', () => {
+  it('moves the top egg into the breeding area, face up', () => {
+    const top = game.players[0].eggDeck[0]
+    const s = apply(game, act.hatch(0))
+    expect(s.players[0].breeding.map((c) => c.iid)).toEqual([top.iid])
+    expect(s.players[0].breeding[0].faceDown).toBe(false)
+    expect(s.players[0].eggDeck).toHaveLength(4)
+    expect(countCards(s)).toBe(countCards(game))
+    assertIntegrity(s)
+  })
+
+  it('refuses when the breeding area is already occupied', () => {
+    const s = apply(game, act.hatch(0))
+    expect(() => apply(s, act.hatch(0))).toThrow(/occupied/)
+  })
+
+  it('refuses when the egg deck is empty', () => {
+    const empty: GameState = {
+      ...game,
+      players: [{ ...game.players[0], eggDeck: [] }, game.players[1]],
+    }
+    expect(() => apply(empty, act.hatch(0))).toThrow(/empty/)
+  })
+
+  it('needs no instance id, because the egg deck is hidden even from its owner', () => {
+    // viewFor masks the egg deck for everyone, so a `move` could never name it.
+    expect(viewFor(game, 0).players[0].eggDeck.every((c) => c.cardId === null)).toBe(true)
+  })
+})
+
 describe('attach', () => {
   it('puts a hand card on top of a card in play', () => {
     const s = playToBattle(game, 0)
@@ -442,6 +472,44 @@ describe('attach', () => {
     expect(done.players[0].hand.map((c) => c.iid)).not.toContain(plug.iid)
     expect(countCards(done)).toBe(countCards(s))
     assertIntegrity(done)
+  })
+
+  it('lets an attached card be found and detached again', () => {
+    const s = playToBattle(game, 0)
+    const host = s.players[0].battle[0].iid
+    const plug = s.players[0].hand[0].iid
+    const on = apply(s, act.attach(0, plug, host))
+    expect(on.players[0].battle[0].attached.map((c) => c.iid)).toEqual([plug])
+
+    // Before locate() searched attached cards this threw "no card with instance id".
+    const off = apply(on, act.move(0, plug, 'trash'))
+    expect(off.players[0].battle[0].attached).toHaveLength(0)
+    expect(off.players[0].battle).toHaveLength(1)
+    expect(off.players[0].trash.map((c) => c.iid)).toEqual([plug])
+    expect(countCards(off)).toBe(countCards(s))
+    assertIntegrity(off)
+  })
+
+  it('does not treat unplugging a card as its host leaving the field', () => {
+    let s = playToBattle(game, 0)
+    const host = s.players[0].battle[0].iid
+    s = apply(s, act.digivolve(0, host, s.players[0].hand[0].iid))
+    const plug = s.players[0].hand[0].iid
+    s = apply(s, act.attach(0, plug, host))
+    const off = apply(s, act.move(0, plug, 'hand'))
+    // The host keeps its digivolution source; only the plug-in moved.
+    expect(off.players[0].battle[0].stack).toHaveLength(1)
+    expect(off.players[0].trash).toHaveLength(0)
+    expect(off.players[0].hand.map((c) => c.iid)).toContain(plug)
+  })
+
+  it('can suspend and flip an attached card now that it is reachable', () => {
+    const s = playToBattle(game, 0)
+    const host = s.players[0].battle[0].iid
+    const plug = s.players[0].hand[0].iid
+    const on = apply(s, act.attach(0, plug, host))
+    expect(() => apply(on, act.suspend(0, plug))).not.toThrow()
+    expect(apply(on, act.suspend(0, plug)).players[0].battle[0].attached[0].suspended).toBe(true)
   })
 
   it('refuses to attach to something that is not in play', () => {
@@ -687,8 +755,9 @@ describe('a two hundred action random walk', () => {
         const partner = pick(mine.hand)
         if (partner) candidates.push(act.digivolve(me, inPlay.iid, partner.iid))
       }
-      const egg = pick(mine.eggDeck)
-      if (egg) candidates.push(act.move(me, egg.iid, 'breeding'))
+      if (mine.eggDeck.length && !mine.breeding.length) candidates.push(act.hatch(me))
+      const inBreeding = pick(mine.breeding)
+      if (inBreeding) candidates.push(act.move(me, inBreeding.iid, 'battle'))
       if (state.players[other(me)].security.length) candidates.push(act.securityCheck(me))
       const revealed = pick(mine.reveal)
       if (revealed) candidates.push(act.move(me, revealed.iid, 'hand'))
@@ -722,6 +791,7 @@ describe('every action type is exercised', () => {
     run(act.draw(0, 1))
     run(act.shuffleDeck(0))
     run(act.shuffleSecurity(0))
+    run(act.hatch(0))
     const played = s.players[0].hand[0].iid
     run(act.move(0, played, 'battle'))
     run(act.digivolve(0, played, s.players[0].hand[0].iid))
@@ -746,7 +816,7 @@ describe('every action type is exercised', () => {
     run(act.concede(1))
 
     const every: Action['t'][] = [
-      'setup', 'mulligan', 'draw', 'shuffleDeck', 'shuffleSecurity', 'move', 'digivolve',
+      'setup', 'mulligan', 'draw', 'shuffleDeck', 'shuffleSecurity', 'hatch', 'move', 'digivolve',
       'deDigivolve', 'attach', 'suspend', 'unsuspend', 'unsuspendAll', 'setDp', 'setCounters',
       'setMemory', 'payMemory', 'nextPhase', 'endTurn', 'securityCheck', 'revealTop',
       'revealHand', 'flip', 'concede', 'chat', 'undoRequest', 'undoAccept', 'undoDecline',
