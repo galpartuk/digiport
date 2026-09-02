@@ -8,6 +8,19 @@ import { FilterPanel } from './components/Filters'
 import { CardGrid } from './components/CardGrid'
 import { CardDetail } from './components/CardDetail'
 import { DeckPanel } from './components/DeckPanel'
+import { DeckIO, type IoTab } from './components/DeckIO'
+import { decodeDeck, hashPayload } from './share'
+
+/** Reads a shared deck out of the URL and clears it, so it is only ever used once. */
+function takeSharedCode(): string | null {
+  const code = hashPayload(location.hash)
+  if (code) history.replaceState(null, '', location.pathname + location.search)
+  return code
+}
+
+// Taken before React mounts, so a StrictMode double effect cannot import the
+// same shared deck twice.
+const sharedCode = takeSharedCode()
 
 export type Hover = { card: Card; x: number; y: number }
 export type HoverHandler = (card: Card | null, e?: React.MouseEvent) => void
@@ -49,6 +62,7 @@ export function App() {
   })
   const [currentId, setCurrentId] = useState<string>(() => decks[0].id)
   const [hover, setHover] = useState<Hover | null>(null)
+  const [io, setIo] = useState<IoTab | null>(null)
 
   useEffect(() => {
     loadCards().then(setIndex)
@@ -107,6 +121,36 @@ export function App() {
     setDecks((ds) => ds.map((d) =>
       (d.id === currentRef.current ? { ...d, main: {}, eggs: {}, updatedAt: Date.now() } : d)))
   }, [])
+
+  const adoptDeck = useCallback((incoming: Deck, mode: 'new' | 'replace') => {
+    if (mode === 'new') {
+      setDecks([...decksRef.current, incoming])
+      setCurrentId(incoming.id)
+      return
+    }
+    setDecks(decksRef.current.map((d) => (d.id === currentRef.current
+      ? { ...d, main: incoming.main, eggs: incoming.eggs, updatedAt: Date.now() }
+      : d)))
+  }, [])
+
+  // A shared link lands as a new deck, selected, with the hash already cleared —
+  // on a cold load, and equally when one is pasted into an already-open tab.
+  useEffect(() => {
+    let live = true
+    const take = (code: string | null) => {
+      if (!code) return
+      decodeDeck(code).then((shared) => {
+        if (live && shared) adoptDeck(shared, 'new')
+      })
+    }
+    take(sharedCode)
+    const onHashChange = () => take(takeSharedCode())
+    window.addEventListener('hashchange', onHashChange)
+    return () => {
+      live = false
+      window.removeEventListener('hashchange', onHashChange)
+    }
+  }, [adoptDeck])
 
   const onHover = useCallback<HoverHandler>((card, e) => {
     if (!card || !e) setHover(null)
@@ -168,9 +212,21 @@ export function App() {
             onClear={onClear}
             onBump={bump}
             onHover={onHover}
+            onOpenIO={setIo}
           />
         </div>
       </div>
+
+      {io && (
+        <DeckIO
+          deck={deck}
+          index={index}
+          tab={io}
+          onTab={setIo}
+          onClose={() => setIo(null)}
+          onImport={adoptDeck}
+        />
+      )}
 
       {hover && <CardDetail card={hover.card} meta={index.meta} x={hover.x} y={hover.y} />}
     </div>

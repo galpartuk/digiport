@@ -1,1 +1,1 @@
-{"root":["./src/app.tsx","./src/cards.ts","./src/deck.ts","./src/main.tsx","./src/vite-env.d.ts","./src/components/carddetail.tsx","./src/components/cardgrid.tsx","./src/components/deckpanel.tsx","./src/components/filters.tsx"],"version":"5.9.3"}
+{"root":["./src/app.tsx","./src/cards.ts","./src/deck.ts","./src/main.tsx","./src/share.ts","./src/vite-env.d.ts","./src/components/carddetail.tsx","./src/components/cardgrid.tsx","./src/components/deckio.tsx","./src/components/deckpanel.tsx","./src/components/filters.tsx"],"version":"5.9.3"}

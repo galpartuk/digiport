@@ -675,9 +675,36 @@ button, input, select, textarea {
 }
 
 .modal header {
-  padding: 13px 16px;
+  padding: 8px 10px 8px 12px;
   border-bottom: 1px solid var(--line-soft);
   font-weight: 700;
+}
+
+.tabs {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.tabs .spacer { flex: 1; }
+
+.tab {
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  padding: 5px 12px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--ink-dim);
+  cursor: pointer;
+}
+
+.tab:hover { background: var(--panel-2); color: var(--ink); }
+
+.tab[aria-pressed='true'] {
+  background: var(--panel-2);
+  border-color: var(--line);
+  color: var(--accent);
 }
 
 .modal .body { padding: 14px 16px; }
@@ -688,7 +715,19 @@ button, input, select, textarea {
   display: flex;
   gap: 8px;
   justify-content: flex-end;
+  align-items: center;
 }
+
+.modal .btn[disabled] { opacity: 0.45; cursor: not-allowed; }
+
+/* The download link has to look and sit exactly like the buttons beside it. */
+a.btn {
+  text-decoration: none;
+  display: inline-block;
+  line-height: 1.45;
+}
+
+.modal .problem { padding-top: 6px; }
 
 .modal textarea {
   width: 100%;
