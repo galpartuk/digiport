@@ -1,1 +1,0 @@
-{"root":["./src/app.tsx","./src/cards.test.ts","./src/cards.ts","./src/deck.test.ts","./src/deck.ts","./src/main.tsx","./src/share.test.ts","./src/share.ts","./src/testindex.ts","./src/vite-env.d.ts","./src/components/carddetail.tsx","./src/components/cardgrid.tsx","./src/components/deckio.tsx","./src/components/deckpanel.tsx","./src/components/filters.tsx"],"version":"5.9.3"}
