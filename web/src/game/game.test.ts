@@ -151,15 +151,16 @@ describe('memory', () => {
 })
 
 describe('phases', () => {
-  it('walks unsuspend -> draw -> breeding -> main -> end, then passes the turn', () => {
+  // Comprehensive rules 6-1-2: four phases, and no end phase.
+  it('walks unsuspend -> draw -> breeding -> main, then passes the turn', () => {
     let s = apply(game, act.endTurn(0))          // get to a normal turn 2
     expect(s.phase).toBe('unsuspend')
     const seen = [s.phase]
-    for (let i = 0; i < 4; i++) {
+    for (let i = 0; i < 3; i++) {
       s = apply(s, act.nextPhase(1))
       seen.push(s.phase)
     }
-    expect(seen).toEqual(['unsuspend', 'draw', 'breeding', 'main', 'end'])
+    expect(seen).toEqual(['unsuspend', 'draw', 'breeding', 'main'])
     s = apply(s, act.nextPhase(1))
     expect(s.turnPlayer).toBe(0)
     expect(s.phase).toBe('unsuspend')
@@ -364,12 +365,24 @@ describe('digivolve and de-digivolve', () => {
     assertIntegrity(back)
   })
 
-  it('trashes a card that has nothing left underneath it', () => {
+  // 16-12-4: <De-Digivolve> can't trash cards from level 3 cards or lower, so a
+  // Digimon that was never digivolved must survive it.
+  it('refuses on a card with nothing underneath, rather than deleting it', () => {
     const s = playToBattle(game, 0)
     const iid = s.players[0].battle[0].iid
-    const gone = apply(s, act.deDigivolve(0, iid, 1))
-    expect(gone.players[0].battle).toHaveLength(0)
-    expect(gone.players[0].trash.map((c) => c.iid)).toContain(iid)
+    expect(() => apply(s, act.deDigivolve(0, iid, 1))).toThrow(/no digivolution sources/)
+    expect(s.players[0].battle).toHaveLength(1)
+  })
+
+  it('stops when the sources run out instead of eating the Digimon', () => {
+    let s = playToBattle(game, 0)
+    const iid = s.players[0].battle[0].iid
+    s = apply(s, act.digivolve(0, iid, s.players[0].hand[0].iid))
+    const back = apply(s, act.deDigivolve(0, iid, 5))
+    expect(back.players[0].battle).toHaveLength(1)
+    expect(back.players[0].battle[0].stack).toEqual([])
+    expect(back.players[0].trash).toHaveLength(1)
+    expect(countCards(back)).toBe(countCards(s))
   })
 
   it('merges the sources of an absorbed Digimon underneath', () => {
@@ -751,7 +764,7 @@ describe('a two hundred action random walk', () => {
       const inPlay = pick(mine.battle)
       if (inPlay) {
         candidates.push(act.suspend(me, inPlay.iid), act.setDp(me, inPlay.iid, 1000))
-        candidates.push(act.deDigivolve(me, inPlay.iid, 1))
+        if (inPlay.stack.length) candidates.push(act.deDigivolve(me, inPlay.iid, 1))
         const partner = pick(mine.hand)
         if (partner) candidates.push(act.digivolve(me, inPlay.iid, partner.iid))
       }
@@ -808,8 +821,8 @@ describe('every action type is exercised', () => {
     run(act.revealTop(0, 1))
     run(act.revealHand(0))
     run(act.flip(0, s.players[0].security[0].iid))
-    run(act.nextPhase(0))
-    run(act.endTurn(0))
+    run(act.nextPhase(0))          // main is the last phase, so this passes the turn
+    run(act.endTurn(1))
     run(act.undoRequest(1))
     run(act.undoAccept(1))
     run(act.undoDecline(1))

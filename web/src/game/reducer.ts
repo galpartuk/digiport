@@ -436,15 +436,16 @@ export function apply(state: GameState, action: Action): GameState {
     case 'deDigivolve': {
       const spot = need(next, action, action.iid)
       assertOwn(action, spot)
+      // Comprehensive rules 16-12-4: <De-Digivolve> can't trash cards from
+      // level 3 cards or lower. The reducer has no card database, so "nothing
+      // underneath" stands in for that -- either way, de-digivolving a Digimon
+      // that was never digivolved must not delete it.
+      if (!spot.instance.stack.length) {
+        throw new IllegalAction(action, 'that card has no digivolution sources to trash')
+      }
       let popped = 0
-      for (let i = 0; i < action.n; i++) {
+      for (let i = 0; i < action.n && spot.instance.stack.length; i++) {
         const card = spot.instance
-        if (!card.stack.length) {
-          // Nothing left underneath: the card itself goes to the trash.
-          relocate(next, need(next, action, card.iid), 'trash')
-          popped++
-          break
-        }
         next.players[card.owner].trash.unshift(newInstance(next, card.cardId, card.owner, false))
         card.cardId = card.stack.pop()!
         popped++
@@ -686,7 +687,11 @@ function setup(state: GameState, action: Extract<Action, { t: 'setup' }>): GameS
     next.rngState = rngState
 
     me.hand = me.deck.splice(0, OPENING_HAND).map((c) => ({ ...c, faceDown: false }))
-    me.security = me.deck.splice(0, SECURITY_SIZE).map((c) => ({ ...c, faceDown: true }))
+    // 5-2-1-6: dealt one at a time, so the top card of the deck ends up at the
+    // BOTTOM of the security stack.
+    me.security = me.deck.splice(0, SECURITY_SIZE)
+      .map((c) => ({ ...c, faceDown: true }))
+      .reverse()
   }
 
   log(next, 'system', `${nameOf(next, 0)} vs ${nameOf(next, 1)} — ` +

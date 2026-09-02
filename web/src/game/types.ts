@@ -51,9 +51,15 @@ export type PlayerState = {
   deckList: DeckList
 }
 
-export type Phase = 'unsuspend' | 'draw' | 'breeding' | 'main' | 'end'
+/**
+ * Comprehensive rules 6-1-2: "A turn proceeds using phases in the following
+ * order. Unsuspend phase, draw phase, breeding phase, and main phase."
+ * There is no end phase — a turn ends when the memory condition is met
+ * (6-1-4-1) or the turn player passes (6-5-1-7-1), not by reaching a last step.
+ */
+export type Phase = 'unsuspend' | 'draw' | 'breeding' | 'main'
 
-export const PHASES: Phase[] = ['unsuspend', 'draw', 'breeding', 'main', 'end']
+export const PHASES: Phase[] = ['unsuspend', 'draw', 'breeding', 'main']
 
 export type LogEntry = {
   n: number
