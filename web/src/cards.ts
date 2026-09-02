@@ -67,6 +67,11 @@ export async function loadCards(base = import.meta.env.BASE_URL): Promise<CardIn
     fetch(`${base}data/cards.json`).then((r) => r.json() as Promise<Card[]>),
     fetch(`${base}data/meta.json`).then((r) => r.json() as Promise<Meta>),
   ])
+  return buildIndex(all, meta)
+}
+
+/** The fetch-free half of loadCards, so tests can index the real payload off disk. */
+export function buildIndex(all: Card[], meta: Meta): CardIndex {
   const byId = new Map(all.map((c) => [c.id, c]))
   const search = new Map(all.map((c) => [c.id, haystack(c)]))
   return { all, byId, meta, search }
