@@ -163,6 +163,46 @@ describe('exportText / importDeck', () => {
     expect(importDeck('3 BT1-10', index).deck.main['BT1-010']).toBe(3)
   })
 
+  it('imports promo and Limited ids, whose set prefix has no digits', () => {
+    const { deck, missing } = importDeck('3 P-224 Kotone Amano\n2 LM-001', index)
+    expect(missing).toEqual([])
+    expect(deck.main['P-224']).toBe(3)
+    expect(count(deck, 'LM-001')).toBe(2)
+  })
+
+  it('round-trips a deck containing a promo', () => {
+    const promo = pick(index, 'a promo card', (c) =>
+      c.id.startsWith('P-') && c.cardType !== 'Digi-Egg' && copyLimit(c) === 4)
+    const deck = addCard(addCard(newDeck('Promos'), promo, 3), unrestricted, 4)
+    const { deck: back, missing } = importDeck(exportText(deck, index), index)
+    expect(missing).toEqual([])
+    expect(back.main).toEqual(deck.main)
+  })
+
+  it('reads a list that puts the name before the id', () => {
+    const { deck, missing } = importDeck('3x Kotone Amano (P-224)', index)
+    expect(missing).toEqual([])
+    expect(deck.main['P-224']).toBe(3)
+  })
+
+  it('imports the whole of a real red-hybrid list, promo included', () => {
+    const list = [
+      '// Egg deck', '4 BT10-003 Pickmons', '', '// Main deck',
+      '3 BT10-029 Starmons', '4 BT19-008 Shoutmon', '2 BT19-057 Sparrowmon',
+      '3 BT19-035 ShootingStarmon', '3 BT19-061 RaptorSparrowmon',
+      '1 BT19-012 OmniShoutmon', '3 BT19-038 JaegerDorulumon',
+      '3 BT19-051 AtlurBallistamon', '4 BT21-021 OmniShoutmon',
+      '3 AD1-013 ZeigGreymon', '2 BT19-014 Shoutmon EX6', '4 AD1-006 Shoutmon X7',
+      '2 BT8-095 Fire Rocket', '4 BT10-087 Taiki Kudo', '3 P-224 Kotone Amano',
+      '3 BT11-095 Taiki, Kiriha, & Nene', '3 BT21-083 Taiki Kudo',
+    ].join('\n')
+    const { deck, missing } = importDeck(list, index)
+    expect(missing).toEqual([])
+    expect(deck.main['P-224']).toBe(3)
+    expect(total(deck.main)).toBe(50)
+    expect(total(deck.eggs)).toBe(4)
+  })
+
   it('folds an alt-art suffix onto the base card', () => {
     const { deck, missing } = importDeck('2 BT1-010_P1', index)
     expect(missing).toEqual([])

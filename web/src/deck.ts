@@ -150,8 +150,34 @@ export function exportText(deck: Deck, index: CardIndex): string {
   return out.join('\n')
 }
 
+/**
+ * The id shape. The digits after the set letters are optional because promos
+ * and Limited cards do not have any — P-224, LM-001 — and requiring them
+ * silently dropped every one of those 311 cards on import.
+ */
+const ID = String.raw`[A-Z]{1,4}\d{0,2}-\d{1,3}[A-Za-z0-9_-]*`
+
 /** `4 BT1-010 Agumon`, `BT1-010 x4`, `4x BT1-010` and bare ids all parse. */
-const TEXT_LINE = /^\s*(?:(\d+)\s*x?\s+)?([A-Z]{1,4}\d{1,2}-\d{1,3}[A-Za-z0-9_-]*)\s*(?:x\s*(\d+))?/i
+const TEXT_LINE = new RegExp(String.raw`^\s*(?:(\d+)\s*x?\s+)?(${ID})\s*(?:x\s*(\d+))?`, 'i')
+
+/** The same id anywhere in the line, for lists that lead with the card name. */
+const LOOSE_ID = new RegExp(String.raw`\b(${ID})\b`, 'i')
+const LEADING_COUNT = /^\s*(\d+)\s*x?\b/
+
+/**
+ * One line of a deck list. A line that names a card is never dropped in
+ * silence: whatever id it carries goes through to `resolve`, which either
+ * finds the card or reports it in `missing`.
+ */
+function parseLine(line: string): [string, number] | null {
+  const exact = TEXT_LINE.exec(line)
+  if (exact) return [exact[2].toUpperCase(), Number(exact[1] ?? exact[3] ?? 1)]
+
+  const loose = LOOSE_ID.exec(line)
+  if (!loose) return null
+  const count = LEADING_COUNT.exec(line)
+  return [loose[1].toUpperCase(), count ? Number(count[1]) : 1]
+}
 
 export type ImportResult = { deck: Deck; missing: string[] }
 
@@ -189,8 +215,8 @@ export function importDeck(raw: string, index: CardIndex, name?: string): Import
   } else {
     for (const line of raw.split(/\r?\n/)) {
       if (/^\s*(?:\/\/|#)/.test(line)) continue
-      const m = TEXT_LINE.exec(line)
-      if (m) entries.push([m[2].toUpperCase(), Number(m[1] ?? m[3] ?? 1)])
+      const entry = parseLine(line)
+      if (entry) entries.push(entry)
     }
   }
 
