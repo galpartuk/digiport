@@ -93,6 +93,19 @@ describe('share links', () => {
     expect(hashWithoutPayload(HASH_PREFIX + code)).toBe('#/')
   })
 
+  // The builder moved to /decks and `/` became the home page, but both share
+  // forms still name `/` — the emitted hash is deliberately unchanged. What
+  // the root does with the payload it adopts is routing's problem, not this
+  // module's; all that matters here is that a payload reads and strips the
+  // same way on whichever route it turns up.
+  it('reads and strips a payload on the builder route as well', async () => {
+    const code = await encodeDeck(sampleDeck())
+    expect(hashPayload(`#/decks?d=${code}`)).toBe(code)
+    expect(hashWithoutPayload(`#/decks?d=${code}`)).toBe('#/decks')
+    expect(hashPayload('#/decks?deck=abc')).toBeNull()
+    expect(hashWithoutPayload('#/decks?deck=abc')).toBe('#/decks?deck=abc')
+  })
+
   it('leaves a hash with no payload untouched', () => {
     expect(hashWithoutPayload('#/play?mode=hotseat&a=one&b=two'))
       .toBe('#/play?mode=hotseat&a=one&b=two')

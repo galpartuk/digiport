@@ -28,6 +28,12 @@ export function Art({ cardId, index, alt }: { cardId: string; index: CardIndex; 
   )
 }
 
+/**
+ * How a declared attack paints this card: the attacker, its target, or one of
+ * the legal targets while the player is still choosing.
+ */
+export type CardMark = 'attacker' | 'target' | 'pick'
+
 type Props = {
   card: ViewCard
   zone: Zone
@@ -36,7 +42,11 @@ type Props = {
   draggable?: boolean
   /** Can another card be dropped onto it (digivolve / attach)? */
   droppable?: boolean
+  mark?: CardMark
+  /** Single click, after the card has been sent to the docked reader. */
   onClick?: () => void
+  /** Double click — in play, the suspend toggle. */
+  onDoubleClick?: () => void
 }
 
 /**
@@ -47,7 +57,9 @@ type Props = {
  * its iid is a positional placeholder from the projection, not a real instance
  * id, so it can be shown as a back but can never be the subject of an action.
  */
-export function BoardCard({ card, zone, owner, draggable = false, droppable = false, onClick }: Props) {
+export function BoardCard(
+  { card, zone, owner, draggable = false, droppable = false, mark, onClick, onDoubleClick }: Props,
+) {
   const ui = useUi()
   /** Where to draw the hover fan, in viewport coordinates — see below. */
   const [fanned, setFanned] = useState<FanBox | null>(null)
@@ -71,31 +83,53 @@ export function BoardCard({ card, zone, owner, draggable = false, droppable = fa
     card.suspended ? 'suspended' : '',
     drag.isDragging ? 'dragging' : '',
     droppable && drop.isOver ? 'droptarget' : '',
+    mark ? `mark-${mark}` : '',
   ].filter(Boolean).join(' ')
 
-  const showDetail = (id: string, e: { clientX: number; clientY: number }) => ui.hoverCard(id, e)
+  /*
+    Effective DP, which is printed DP plus every ±1000 the players have piled on.
+    `game/` has no card database on purpose, so this is the board's job: it is
+    the one number a player recomputes in their head on every single battle, and
+    reading it off the card costs nothing and decides nothing.
+  */
+  const printed = known ? ui.index.byId.get(cardId) : undefined
+  const inPlay = zone === 'battle' || zone === 'breeding'
+  const dp = printed?.dp
+  const showDp = !hidden && inPlay && dp !== undefined
 
   return (
     <button
       type="button"
       ref={setRef}
       className={cls}
+      /* The attack arrow finds its two endpoints by this attribute. */
+      data-iid={card.iid}
       {...drag.listeners}
       {...drag.attributes}
       title={known ? cardId : undefined}
-      onClick={() => { if (known) onClick?.() }}
+      /*
+        Three gestures and no hidden fourth: a single click reads the card into
+        the docked panel and never changes the board, a double click is the
+        suspend toggle in play, and a right click opens everything else. Reading
+        a card has to be free — it is the thing a player does most.
+      */
+      onClick={() => {
+        if (!known) return
+        ui.peekCard(cardId)
+        onClick?.()
+      }}
+      onDoubleClick={() => { if (known) onDoubleClick?.() }}
       onContextMenu={(e) => {
         e.preventDefault()
-        if (known) ui.openMenu({ card, owner, zone }, e.clientX, e.clientY)
+        if (known) {
+          ui.peekCard(cardId)
+          ui.openMenu({ card, owner, zone }, e.clientX, e.clientY)
+        }
       }}
       onMouseEnter={(e) => {
         setFanned(fanBox(e.currentTarget, card.stack.length + card.attached.length))
-        if (!hidden) showDetail(cardId, e)
       }}
-      onMouseLeave={() => {
-        setFanned(null)
-        ui.hoverCard(null)
-      }}
+      onMouseLeave={() => setFanned(null)}
     >
       {!hidden && <Art cardId={cardId} index={ui.index} />}
 
@@ -114,9 +148,21 @@ export function BoardCard({ card, zone, owner, draggable = false, droppable = fa
         </div>
       )}
 
-      {(card.dpMod !== 0 || card.counters > 0) && (
+      {showDp && (
+        <span
+          className={`dp-plate${card.dpMod > 0 ? ' up' : card.dpMod < 0 ? ' down' : ''}`}
+          title={card.dpMod === 0
+            ? `${dp} DP`
+            : `${dp} printed ${card.dpMod > 0 ? '+' : '−'} ${Math.abs(card.dpMod)}`}
+        >
+          {(dp + card.dpMod).toLocaleString('en-US')}
+        </span>
+      )}
+
+      {/* A Tamer or Option carrying a modifier has no printed DP to fold it into. */}
+      {((card.dpMod !== 0 && !showDp) || card.counters > 0) && (
         <div className="badge-row">
-          {card.dpMod !== 0 && (
+          {card.dpMod !== 0 && !showDp && (
             <span className={`badge dp${card.dpMod < 0 ? ' minus' : ''}`}>
               {card.dpMod > 0 ? '+' : '−'}{Math.abs(card.dpMod) / 1000}k
             </span>
@@ -143,7 +189,7 @@ export function BoardCard({ card, zone, owner, draggable = false, droppable = fa
           sources={[...card.stack].reverse()}
           attached={card.attached.map((a) => a.cardId).filter((id): id is string => !!id)}
           index={ui.index}
-          onPeek={showDetail}
+          onPeek={ui.peekCard}
         />
       )}
     </button>
@@ -192,15 +238,19 @@ function StackFan(
     sources: string[]
     attached: string[]
     index: CardIndex
-    onPeek: (cardId: string, at: { clientX: number; clientY: number }) => void
+    onPeek: (cardId: string) => void
   },
 ) {
+  /* Click, like everywhere else on the board, is what fills the docked reader. */
   const thumb = (cardId: string, key: string, plugin: boolean) => (
     <span
       key={key}
+      role="button"
+      tabIndex={-1}
       className={plugin ? 'fan-thumb plugin' : 'fan-thumb'}
       style={{ width: box.w, height: box.h }}
-      onMouseEnter={(e) => onPeek(cardId, e)}
+      onClick={(e) => { e.stopPropagation(); onPeek(cardId) }}
+      onKeyDown={(e) => { if (e.key === 'Enter') onPeek(cardId) }}
     >
       <Art cardId={cardId} index={index} alt={false} />
     </span>

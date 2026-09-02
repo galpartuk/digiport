@@ -975,6 +975,10 @@ a.btn {
   grid-area: battle;
   min-height: 0;
   overflow-y: auto;
+  /* Mirrored, the cards still gather at the edge nearest the memory gauge. */
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-start;
   /* Slot guides, one card wide, so an empty battle area still reads as a field. */
   background-image:
     repeating-linear-gradient(
@@ -1706,6 +1710,8 @@ a.btn {
 
 .reveal-bar .spacer { flex: 0 0 6px; }
 
+.reveal-bar.opt-bar .spacer { flex: 1; }
+
 .logpanel {
   flex: 1;
   min-height: 0;
@@ -2066,6 +2072,9 @@ a.btn {
   where you are trying to look, and empties itself the moment you glance away.
 */
 .peek {
+  /* Above the pile browser's scrim: reading a card is the point of opening one. */
+  position: relative;
+  z-index: 56;
   display: flex;
   flex-direction: column;
   min-height: 0;
@@ -2225,8 +2234,15 @@ a.btn {
 
 .half.foe .brow-tag { top: auto; bottom: 6px; }
 
-/* A two-row battle area is taller than a one-row one; let it own the space. */
-.zone.battle.rows .battle-rows { flex: 1; }
+.half.foe .zone.battle { justify-content: flex-end; }
+
+/* The battle area fills to its edge, so its name plate needs the room. */
+.zone.battle { padding-top: 16px; }
+
+.half.foe .zone.battle { padding-top: 6px; padding-bottom: 16px; }
+
+.zone.battle > .battle-rows,
+.zone.battle > .zone-cards { flex: 0 0 auto; }
 
 /* --------------------------------------------------------- effective DP */
 

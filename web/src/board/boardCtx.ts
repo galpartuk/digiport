@@ -27,8 +27,15 @@ export type BoardUi = {
   seat: PlayerId
   index: CardIndex
   dispatch: (action: Action) => void
-  /** Show (or with null, hide) the floating CardDetail panel at the cursor. */
-  hoverCard: (cardId: string | null, at?: { clientX: number; clientY: number }) => void
+  /**
+   * Put a card into the docked reader down the left edge.
+   *
+   * Click-driven, not hover-driven: the panel changes when you pick a card, and
+   * holds it until you pick another one. Hover would make it flicker every time
+   * the pointer crossed the mat, which is exactly what a board reader must not
+   * do.
+   */
+  peekCard: (cardId: string) => void
   openMenu: (target: MenuTarget, x: number, y: number) => void
 }
 
