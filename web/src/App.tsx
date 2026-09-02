@@ -3,33 +3,16 @@ import {
   EMPTY_FILTERS, filterCards, loadCards, sortCards, SORTS,
   type Card, type CardIndex, type Filters, type Meta, type SortKey,
 } from './cards'
-import { Link } from 'react-router-dom'
+import { Link, useSearchParams } from 'react-router-dom'
 import { addCard, count, loadDecks, newDeck, saveDecks, validate, type Deck } from './deck'
 import { FilterPanel } from './components/Filters'
 import { CardGrid } from './components/CardGrid'
 import { CardDetail } from './components/CardDetail'
 import { DeckPanel } from './components/DeckPanel'
 import { DeckIO, type IoTab } from './components/DeckIO'
-import { decodeDeck, hashPayload, hashWithoutPayload } from './share'
-
-/**
- * Reads a shared deck out of the URL and clears it, so it is only ever used
- * once. Only the payload is removed: the route it arrived on stays in the
- * hash, because the hash is now the router's as well.
- */
-function takeSharedCode(): string | null {
-  const code = hashPayload(location.hash)
-  if (code) {
-    const rest = hashWithoutPayload(location.hash)
-    history.replaceState(null, '', location.pathname + location.search + rest)
-  }
-  return code
-}
-
-// Taken before React mounts — and before the router reads the hash — so a
-// StrictMode double effect cannot import the same shared deck twice and a
-// `#d=` link cannot be mistaken for a route.
-let sharedCode = takeSharedCode()
+import { Nav } from './Nav'
+import { decodeDeck } from './share'
+import { clearSharedCode, pendingSharedCode, subscribeSharedCode } from './sharedDeck'
 
 export type Hover = { card: Card; x: number; y: number }
 export type HoverHandler = (card: Card | null, e?: React.MouseEvent) => void
@@ -69,9 +52,20 @@ export function App() {
     // The deck panel must never have nothing to show.
     return stored.length ? stored : [newDeck('New deck')]
   })
-  const [currentId, setCurrentId] = useState<string>(() => decks[0].id)
+  // `/decks?deck=<id>` opens on that deck — how the home page hands one over.
+  // An id this device has never heard of is simply ignored.
+  const [params] = useSearchParams()
+  const [currentId, setCurrentId] = useState<string>(() => {
+    const wanted = params.get('deck')
+    return wanted && decks.some((d) => d.id === wanted) ? wanted : decks[0].id
+  })
   const [hover, setHover] = useState<Hover | null>(null)
-  const [io, setIo] = useState<IoTab | null>(null)
+  // /decks?io=presets opens straight on a tab, so the home page can point at one.
+  const [io, setIo] = useState<IoTab | null>(() => {
+    const wanted = new URLSearchParams(window.location.hash.split('?')[1] ?? '').get('io')
+    return (['presets', 'import', 'export', 'share'] as const)
+      .find((t) => t === wanted) ?? null
+  })
   const [sort, setSort] = useState<SortKey>('deck')
   const [sortDesc, setSortDesc] = useState(false)
 
@@ -146,30 +140,33 @@ export function App() {
 
   // A shared link lands as a new deck, selected, with the hash already cleared —
   // on a cold load, and equally when one is pasted into an already-open tab.
+  // The payload itself is taken out of the URL in sharedDeck.ts, because `/`
+  // is the home page now and a share link names `/`.
   useEffect(() => {
     let live = true
     /**
      * The pending code is cleared only once a deck has actually been adopted.
-     * StrictMode throws the first effect pass away, and the builder now
-     * unmounts whenever the board route is open, so "read it out of the URL"
-     * and "used it" have to be two separate moments.
+     * StrictMode throws the first effect pass away, and the builder unmounts
+     * whenever another route is open, so "read it out of the URL" and "used
+     * it" have to be two separate moments.
      */
     const pull = () => {
-      const fresh = takeSharedCode()
-      if (fresh) sharedCode = fresh
-      const code = sharedCode
+      const code = pendingSharedCode()
       if (!code) return
       decodeDeck(code).then((shared) => {
-        if (!live || !shared) return
-        if (sharedCode === code) sharedCode = null
+        // Unreadable is final: leaving it pending would bounce the visitor
+        // from the home page back to here on every visit.
+        if (!shared) return clearSharedCode(code)
+        if (!live) return
+        clearSharedCode(code)
         adoptDeck(shared, 'new')
       })
     }
     pull()
-    window.addEventListener('hashchange', pull)
+    const off = subscribeSharedCode(pull)
     return () => {
       live = false
-      window.removeEventListener('hashchange', pull)
+      off()
     }
   }, [adoptDeck])
 
@@ -194,11 +191,7 @@ export function App() {
 
   return (
     <div className="app">
-      <div className="topbar">
-        <div className="brand">
-          Digi<em>port</em> <span>deck builder</span>
-        </div>
-        <div className="spacer" />
+      <Nav label="deck builder">
         {playable ? (
           <Link
             className="btn btn-primary btn-sm"
@@ -217,7 +210,7 @@ export function App() {
           </button>
         )}
         <span className="result-count">{index.meta.count.toLocaleString()} cards</span>
-      </div>
+      </Nav>
 
       <div className="workspace">
         <div className="col col-filters">

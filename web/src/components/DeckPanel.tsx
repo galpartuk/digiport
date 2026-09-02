@@ -127,7 +127,7 @@ type Props = {
   onClear: () => void
   onBump: (card: Card, delta: number) => void
   onHover: HoverHandler
-  onOpenIO: (tab: 'import' | 'export' | 'share') => void
+  onOpenIO: (tab: 'presets' | 'import' | 'export' | 'share') => void
 }
 
 export function DeckPanel(props: Props) {
@@ -291,6 +291,7 @@ export function DeckPanel(props: Props) {
           </div>
         ) : (
           <>
+            <button className="btn" onClick={() => props.onOpenIO('presets')}>Presets</button>
             <button className="btn" onClick={() => props.onOpenIO('import')}>Import</button>
             <button className="btn" onClick={() => props.onOpenIO('export')}>Export</button>
             <button className="btn" onClick={() => props.onOpenIO('share')}>Share</button>

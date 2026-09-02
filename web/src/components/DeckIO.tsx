@@ -2,8 +2,9 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import type { CardIndex } from '../cards'
 import { exportText, importDeck, type Deck } from '../deck'
 import { shareHash } from '../share'
+import { PRESETS, deckFromPreset, presetMisses } from '../presets'
 
-export type IoTab = 'import' | 'export' | 'share'
+export type IoTab = 'presets' | 'import' | 'export' | 'share'
 
 type Props = {
   deck: Deck
@@ -30,6 +31,48 @@ function CopyButton({ text, target }: { text: string; target?: React.RefObject<H
   }
 
   return <button className="btn" onClick={copy}>{done ? 'Copied' : 'Copy'}</button>
+}
+
+/** Ready-made decks, so a new player has something legal to take to the board. */
+function PresetsTab({ index, onImport }: Pick<Props, 'index' | 'onImport'>) {
+  const [added, setAdded] = useState<string | null>(null)
+
+  return (
+    <>
+      <p className="hint">
+        Complete, legal decks you can play straight away. Adding one makes your own copy —
+        edit it however you like without touching the original.
+      </p>
+      <div className="preset-list">
+        {PRESETS.map((preset) => {
+          const missing = presetMisses(preset, index)
+          return (
+            <div className="preset" key={preset.id}>
+              <div className="preset-text">
+                <b>{preset.name}</b>
+                <span>{preset.blurb}</span>
+                {missing.length > 0 && (
+                  <span className="problem warn">
+                    {missing.length} card{missing.length === 1 ? '' : 's'} missing from the
+                    current pool — add it anyway and the rest will import.
+                  </span>
+                )}
+              </div>
+              <button
+                className="btn btn-primary"
+                onClick={() => {
+                  onImport(deckFromPreset(preset, index), 'new')
+                  setAdded(preset.name)
+                }}
+              >
+                {added === preset.name ? 'Added' : 'Add to my decks'}
+              </button>
+            </div>
+          )
+        })}
+      </div>
+    </>
+  )
 }
 
 function ImportTab({ index, onImport }: Pick<Props, 'index' | 'onImport'>) {
@@ -152,7 +195,7 @@ export function DeckIO(props: Props) {
       <div className="modal" role="dialog" aria-label="Deck import and export">
         <header>
           <div className="tabs">
-            {(['import', 'export', 'share'] as IoTab[]).map((t) => (
+            {(['presets', 'import', 'export', 'share'] as IoTab[]).map((t) => (
               <button
                 key={t}
                 className="tab"
@@ -167,6 +210,7 @@ export function DeckIO(props: Props) {
           </div>
         </header>
         <div className="body">
+          {tab === 'presets' && <PresetsTab index={index} onImport={onImport} />}
           {tab === 'import' && <ImportTab index={index} onImport={onImport} />}
           {tab === 'export' && <ExportTab deck={deck} index={index} />}
           {tab === 'share' && <ShareTab deck={deck} />}
