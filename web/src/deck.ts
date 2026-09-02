@@ -300,12 +300,30 @@ function normalise(id: string): string {
 
 const KEY = 'digiport.decks.v1'
 
+/**
+ * Drops entries that are not a positive count. Decks saved before the copy
+ * limit was fixed can hold a banned card at 0, which counts for nothing but
+ * still draws a row in the deck panel.
+ */
+function positiveOnly(pile: Record<string, number>): Record<string, number> {
+  const out: Record<string, number> = {}
+  for (const [id, n] of Object.entries(pile ?? {})) {
+    if (Number.isFinite(n) && n > 0) out[id] = Math.floor(n)
+  }
+  return out
+}
+
 export function loadDecks(): Deck[] {
   try {
     const raw = localStorage.getItem(KEY)
     if (!raw) return []
     const decks = JSON.parse(raw) as Deck[]
-    return Array.isArray(decks) ? decks : []
+    if (!Array.isArray(decks)) return []
+    return decks.map((d) => ({
+      ...d,
+      main: positiveOnly(d.main),
+      eggs: positiveOnly(d.eggs),
+    }))
   } catch {
     return []
   }

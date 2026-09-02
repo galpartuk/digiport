@@ -11,6 +11,23 @@ describe('filterCards', () => {
     expect(find({ includeUnreleased: true }).length).toBeGreaterThan(find({}).length)
   })
 
+  it('includes promos and Limited cards that are actually in print', () => {
+    // TakaOtaku's English release flag goes stale for the two sets that have no
+    // release date of their own, which used to hide 56 cards people can hold.
+    const ids = new Set(find({}).map((c) => c.id))
+    expect(ids.has('P-240')).toBe(true)                    // Arcturusmon
+    expect(ids.has('LM-054')).toBe(true)                   // Treadmill Training
+
+    const training = find({ text: 'training' })
+    expect(training.filter((c) => c.setCode === 'LM').length).toBeGreaterThanOrEqual(12)
+  })
+
+  it('still hides the promos with no printing behind them', () => {
+    const ids = new Set(find({}).map((c) => c.id))
+    expect(ids.has('P-248')).toBe(false)
+    expect(new Set(find({ includeUnreleased: true }).map((c) => c.id)).has('P-248')).toBe(true)
+  })
+
   it('filters by card type', () => {
     const eggs = find({ types: ['Digi-Egg'] })
     expect(eggs.length).toBeGreaterThan(0)

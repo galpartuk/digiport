@@ -42,6 +42,26 @@ def host_code(card):
     return 0
 
 
+def is_released(card):
+    """digimondle's release flag, with the P and LM gap closed.
+
+    TakaOtaku's `restrictions.english` goes stale, and digimondle only overrides
+    it for cards that belong to a set with a known English release date. P and
+    LM are not single sets and have no such date, so the stale flag was the only
+    thing deciding for them -- which hid 56 cards that are demonstrably in
+    print: Arcturusmon (P-240), the whole Training cycle, the Memory Boost!
+    cycle, the Time Stranger promo pack and the Unique Emblems.
+
+    digimoncard.io naming an actual pack the card was printed in is the better
+    signal, and it is already merged into `printedIn`. The handful with no
+    printing at all (P-245..P-250, which carry no date either) stay hidden and
+    remain reachable behind the "include unreleased" filter.
+    """
+    if card.get("released"):
+        return True
+    return bool(card.get("printedIn"))
+
+
 def main():
     with open(SRC, encoding="utf-8") as fh:
         source = json.load(fh)
@@ -56,7 +76,7 @@ def main():
 
         out = {k: card[k] for k in KEEP if card.get(k) not in (None, "", [], False)}
         out["id"] = cid
-        out["released"] = bool(card.get("released"))
+        out["released"] = is_released(card)
         out["h"] = host_code(card)
 
         jp = (card.get("names") or {}).get("japanese")
@@ -87,6 +107,11 @@ def main():
     print("cards      %7d  (%s)" % (
         len(cards), ", ".join("%s %d" % kv for kv in by_type.most_common())))
     print("banned     %7d   restricted %d" % (len(meta["banned"]), len(meta["restricted"])))
+    hidden = [c["id"] for c in cards if not c["released"]]
+    promoted = sum(1 for c in source
+                   if c.get("cardType") and not c.get("released") and c.get("printedIn"))
+    print("released   %7d   (%d promoted past a stale flag)  still hidden: %s"
+          % (sum(1 for c in cards if c["released"]), promoted, ", ".join(hidden) or "none"))
 
 
 if __name__ == "__main__":

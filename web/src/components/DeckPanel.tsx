@@ -15,7 +15,8 @@ function groupRows(deck: Deck, index: CardIndex): Group[] {
     const out: Row[] = []
     for (const [id, n] of Object.entries(pile)) {
       const card = index.byId.get(id)
-      if (card) out.push({ card, n })
+      // A count of 0 is not a card in the deck, whatever is in storage.
+      if (card && n > 0) out.push({ card, n })
     }
     return out
   }
