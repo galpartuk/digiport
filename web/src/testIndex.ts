@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs'
 import { buildIndex, type Card, type CardIndex, type Meta } from './cards'
 
 /**
- * The real 4,384-card payload, read straight off disk. Fixtures made up by hand
+ * The real card payload, read straight off disk. Fixtures made up by hand
  * would not catch the things that actually break — zero-padded ids, alt-art
  * suffixes, banned cards, cards with no play cost.
  */

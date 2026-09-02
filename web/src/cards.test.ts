@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { EMPTY_FILTERS, filterCards, imageUrl, sortCards, type Filters } from './cards'
+import { EMPTY_FILTERS, filterCards, imageUrl, sortCards, SORTS, type Filters } from './cards'
 import { pick, realIndex } from './testIndex'
 
 const index = realIndex()
@@ -93,6 +93,81 @@ describe('sortCards', () => {
         expect(a.level).toBeLessThanOrEqual(b.level)
       }
     }
+  })
+
+  it('is unchanged when called the old way, with no sort arguments', () => {
+    const pool = find({ sets: ['ST1'] })
+    expect(sortCards(pool).map((c) => c.id)).toEqual(sortCards(pool, 'deck', false).map((c) => c.id))
+  })
+
+  it.each(SORTS.map((s) => s.key))('keeps every card when sorting by %s', (key) => {
+    const pool = find({ sets: ['BT1'] })
+    for (const desc of [false, true]) {
+      const sorted = sortCards(pool, key, desc)
+      expect(sorted).toHaveLength(pool.length)
+      expect(new Set(sorted.map((c) => c.id))).toEqual(new Set(pool.map((c) => c.id)))
+    }
+  })
+
+  it('sorts by name, and reverses on demand', () => {
+    const pool = find({ sets: ['ST1'] })
+    const names = sortCards(pool, 'name').map((c) => c.name)
+    expect(names).toEqual([...names].sort((a, b) => a.localeCompare(b)))
+    expect(sortCards(pool, 'name', true).map((c) => c.name)).toEqual([...names].reverse())
+  })
+
+  it('sorts card numbers the way a binder does, not as strings', () => {
+    const ids = sortCards(find({}), 'number').map((c) => c.id)
+    // A string sort would put BT10 before BT2; a binder does not.
+    expect(ids.indexOf('BT2-007')).toBeLessThan(ids.indexOf('BT10-003'))
+    expect([...ids].sort().indexOf('BT10-003')).toBeLessThan([...ids].sort().indexOf('BT2-007'))
+
+    const parts = (id: string) => {
+      const m = /^([A-Z]+)(\d*)-(\d+)/.exec(id)!
+      return [m[1], Number(m[2] || 0), Number(m[3])] as const
+    }
+    for (let i = 1; i < ids.length; i++) {
+      const [pa, sa, na] = parts(ids[i - 1])
+      const [pb, sb, nb] = parts(ids[i])
+      expect(pa <= pb).toBe(true)
+      if (pa === pb) expect(sa <= sb).toBe(true)
+      if (pa === pb && sa === sb) expect(na).toBeLessThanOrEqual(nb)
+    }
+  })
+
+  it('orders play cost low to high, and high to low reversed', () => {
+    const pool = find({ types: ['Digimon'], sets: ['BT1'] })
+    const asc = sortCards(pool, 'cost').map((c) => c.playCost!)
+    expect(asc).toEqual([...asc].sort((a, b) => a - b))
+    expect(sortCards(pool, 'cost', true).map((c) => c.playCost!))
+      .toEqual([...asc].sort((a, b) => b - a))
+  })
+
+  it('sinks cards with no value for the key to the bottom either way', () => {
+    const pool = find({ sets: ['ST1'] })
+    const noDp = pool.filter((c) => c.dp === undefined).length
+    expect(noDp).toBeGreaterThan(0)
+    for (const desc of [false, true]) {
+      const sorted = sortCards(pool, 'dp', desc)
+      expect(sorted.slice(-noDp).every((c) => c.dp === undefined)).toBe(true)
+      expect(sorted[0].dp).toBeDefined()
+    }
+  })
+
+  it('sorts by set release date, newest last then newest first', () => {
+    const pool = find({ levels: [6] })
+    const dates = sortCards(pool, 'released')
+      .map((c) => c.setReleased).filter(Boolean) as string[]
+    expect(dates).toEqual([...dates].sort())
+    const newest = sortCards(pool, 'released', true)[0]
+    expect(newest.setReleased).toBe(dates[dates.length - 1])
+  })
+
+  it('breaks ties by name then id, so the order never wobbles', () => {
+    const pool = find({ types: ['Option'] })
+    const first = sortCards(pool, 'cost').map((c) => c.id)
+    const second = sortCards([...pool].reverse(), 'cost').map((c) => c.id)
+    expect(first).toEqual(second)
   })
 
   it('leaves the input array alone', () => {

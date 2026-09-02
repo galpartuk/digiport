@@ -140,13 +140,88 @@ export function filterCards(index: CardIndex, f: Filters): Card[] {
   })
 }
 
-/** Deckbuilding sort: type, then level, then cost, then id. */
-export function sortCards(cards: Card[]): Card[] {
-  const typeRank: Record<string, number> = { 'Digi-Egg': 0, Digimon: 1, Tamer: 2, Option: 3 }
-  return [...cards].sort((a, b) =>
-    (typeRank[a.cardType] ?? 9) - (typeRank[b.cardType] ?? 9) ||
-    (a.level ?? 99) - (b.level ?? 99) ||
-    (a.playCost ?? 99) - (b.playCost ?? 99) ||
-    a.name.localeCompare(b.name) ||
-    a.id.localeCompare(b.id))
+export type SortKey = 'deck' | 'name' | 'number' | 'cost' | 'level' | 'dp' | 'released'
+
+export const SORTS: Array<{ key: SortKey; label: string }> = [
+  { key: 'deck', label: 'Deck order' },
+  { key: 'name', label: 'Name' },
+  { key: 'number', label: 'Card number' },
+  { key: 'cost', label: 'Play cost' },
+  { key: 'level', label: 'Level' },
+  { key: 'dp', label: 'DP' },
+  { key: 'released', label: 'Set release' },
+]
+
+const TYPE_RANK: Record<string, number> = { 'Digi-Egg': 0, Digimon: 1, Tamer: 2, Option: 3 }
+
+/**
+ * Card numbers sort the way a binder does: set letters, then set number, then
+ * card number — so BT2 comes before BT10, and BT1-9 before BT1-010.
+ */
+function byNumber(a: Card, b: Card): number {
+  const parts = (id: string) => {
+    const m = /^([A-Z]+)(\d*)-(\d+)(.*)$/i.exec(id)
+    return m ? [m[1], Number(m[2] || 0), Number(m[3]), m[4]] as const : [id, 0, 0, ''] as const
+  }
+  const [pa, sa, na, xa] = parts(a.id)
+  const [pb, sb, nb, xb] = parts(b.id)
+  return pa.localeCompare(pb) || sa - sb || na - nb || xa.localeCompare(xb)
+}
+
+/**
+ * The primary comparator per sort key. A card missing the value being sorted
+ * on always sinks to the bottom, in both directions — a Tamer with no play
+ * cost is not "the cheapest card", and it is not the most expensive either.
+ */
+function primary(key: SortKey): (a: Card, b: Card) => number {
+  // A missing value returns an infinite sentinel rather than a real ordering,
+  // which is what sortCards looks for to keep it at the bottom under `desc`.
+  const ordered = <T>(get: (c: Card) => T | undefined, cmp: (x: T, y: T) => number) =>
+    (a: Card, b: Card) => {
+      const [x, y] = [get(a), get(b)]
+      if (x === undefined || y === undefined) {
+        return x === y ? 0 : x === undefined ? Number.POSITIVE_INFINITY : Number.NEGATIVE_INFINITY
+      }
+      return cmp(x, y)
+    }
+  const numeric = (get: (c: Card) => number | undefined) =>
+    ordered(get, (x: number, y: number) => x - y)
+
+  switch (key) {
+    case 'deck':
+      return (a, b) =>
+        (TYPE_RANK[a.cardType] ?? 9) - (TYPE_RANK[b.cardType] ?? 9) ||
+        (a.level ?? 99) - (b.level ?? 99) ||
+        (a.playCost ?? 99) - (b.playCost ?? 99)
+    case 'name':
+      return (a, b) => a.name.localeCompare(b.name)
+    case 'number':
+      return byNumber
+    case 'cost':
+      return numeric((c) => c.playCost)
+    case 'level':
+      return numeric((c) => c.level)
+    case 'dp':
+      return numeric((c) => c.dp)
+    case 'released':
+      // "YYYY-MM"; P and LM cards belong to no dated set and have none.
+      return ordered((c) => c.setReleased, (x: string, y: string) => x.localeCompare(y))
+  }
+}
+
+/**
+ * Deckbuilding sort. The defaults are the original behaviour — type, then
+ * level, then cost, then name — so callers that pass nothing are unaffected.
+ * `desc` reverses only the chosen key; the name/id tiebreak stays ascending so
+ * cards with equal cost do not also flip alphabetically.
+ */
+export function sortCards(cards: Card[], key: SortKey = 'deck', desc = false): Card[] {
+  const rank = primary(key)
+  const missing = (n: number) => n === Number.POSITIVE_INFINITY || n === Number.NEGATIVE_INFINITY
+  return [...cards].sort((a, b) => {
+    const r = rank(a, b)
+    // A sentinel means one side has no value at all; it sinks either way.
+    if (r !== 0) return missing(r) ? (r > 0 ? 1 : -1) : (desc ? -r : r)
+    return a.name.localeCompare(b.name) || a.id.localeCompare(b.id)
+  })
 }

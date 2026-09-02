@@ -1,7 +1,7 @@
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
-  EMPTY_FILTERS, filterCards, loadCards, sortCards,
-  type Card, type CardIndex, type Filters, type Meta,
+  EMPTY_FILTERS, filterCards, loadCards, sortCards, SORTS,
+  type Card, type CardIndex, type Filters, type Meta, type SortKey,
 } from './cards'
 import { addCard, count, loadDecks, newDeck, saveDecks, type Deck } from './deck'
 import { FilterPanel } from './components/Filters'
@@ -63,6 +63,8 @@ export function App() {
   const [currentId, setCurrentId] = useState<string>(() => decks[0].id)
   const [hover, setHover] = useState<Hover | null>(null)
   const [io, setIo] = useState<IoTab | null>(null)
+  const [sort, setSort] = useState<SortKey>('deck')
+  const [sortDesc, setSortDesc] = useState(false)
 
   useEffect(() => {
     loadCards().then(setIndex)
@@ -158,8 +160,8 @@ export function App() {
   }, [])
 
   const results = useMemo(
-    () => (index ? sortCards(filterCards(index, filters)) : []),
-    [index, filters],
+    () => (index ? sortCards(filterCards(index, filters), sort, sortDesc) : []),
+    [index, filters, sort, sortDesc],
   )
 
   if (!index) return <div className="loading">Loading cards…</div>
@@ -187,6 +189,22 @@ export function App() {
               value={filters.text}
               onChange={(e) => setFilters((f) => ({ ...f, text: e.target.value }))}
             />
+            <select
+              className="field sort"
+              aria-label="Sort cards by"
+              value={sort}
+              onChange={(e) => setSort(e.target.value as SortKey)}
+            >
+              {SORTS.map((s) => <option key={s.key} value={s.key}>{s.label}</option>)}
+            </select>
+            <button
+              className="btn btn-sm"
+              aria-pressed={sortDesc}
+              title={sortDesc ? 'Descending — click for ascending' : 'Ascending — click for descending'}
+              onClick={() => setSortDesc((d) => !d)}
+            >
+              {sortDesc ? '↓' : '↑'}
+            </button>
             <span className="result-count">{results.length.toLocaleString()}</span>
           </div>
           <GridSection
