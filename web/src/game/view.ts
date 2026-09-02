@@ -1,5 +1,5 @@
-import { HIDDEN_ZONES, type CardInstance, type DeckList, type GameState, type LogEntry,
-  type Phase, type PlayerId, type Zone } from './types'
+import { HIDDEN_ZONES, type Attack, type CardInstance, type DeckList, type GameState,
+  type LogEntry, type Phase, type PlayerId, type Zone } from './types'
 
 /**
  * What one seat is allowed to see. The board UI renders only a PlayerView and
@@ -38,6 +38,8 @@ export type PlayerView = {
   memory: number
   firstPlayer: PlayerId
   winner: PlayerId | null
+  /** Both battle areas are public, so a declared attack is visible to everyone. */
+  attack: Attack | null
   log: ViewLogEntry[]
 }
 
@@ -114,6 +116,7 @@ export function viewFor(state: GameState, viewer: Viewer): PlayerView {
     memory: state.memory,
     firstPlayer: state.firstPlayer,
     winner: state.winner,
+    attack: state.attack,
     // The action payload would carry instance ids and card ids straight past
     // every check above, so the log travels as text only.
     log: state.log.map(({ n, by, text }) => ({ n, by, text })),

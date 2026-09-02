@@ -61,6 +61,22 @@ export type Phase = 'unsuspend' | 'draw' | 'breeding' | 'main'
 
 export const PHASES: Phase[] = ['unsuspend', 'draw', 'breeding', 'main']
 
+/**
+ * A declared attack, kept in state so the board can draw the arrow and both
+ * players can see what is attacking what.
+ *
+ * This is an announcement, not a rules engine. The comprehensive rules put a
+ * lot around an attack -- summoning sickness (7-1-2-1), only suspended Digimon
+ * may be targeted (11-2-7-1), counter and block timings (11-1-3) -- and none of
+ * it is enforced here. Players remember those; the simulator makes the
+ * declaration unambiguous.
+ */
+export type Attack = {
+  attacker: Iid
+  /** An opponent's Digimon, or the opponent themselves. */
+  target: Iid | 'player'
+}
+
 export type LogEntry = {
   n: number
   by: PlayerId | 'system'
@@ -83,6 +99,8 @@ export type GameState = {
   memory: number
   firstPlayer: PlayerId
   winner: PlayerId | null
+  /** The attack currently declared, if any. Cleared when the turn passes. */
+  attack: Attack | null
   log: LogEntry[]
   nextIid: number
   /** Players who have already used (or forfeited) their mulligan. */
@@ -127,6 +145,8 @@ export type Action =
   | { t: 'payMemory'; by: PlayerId; cost: number }
   | { t: 'nextPhase'; by: PlayerId }
   | { t: 'endTurn'; by: PlayerId }
+  | { t: 'attack'; by: PlayerId; iid: Iid; target: Iid | 'player' }
+  | { t: 'endAttack'; by: PlayerId }
   | { t: 'securityCheck'; by: PlayerId }
   | { t: 'revealTop'; by: PlayerId; n: number }
   | { t: 'revealHand'; by: PlayerId }

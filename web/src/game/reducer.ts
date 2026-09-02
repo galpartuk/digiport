@@ -57,6 +57,7 @@ export function emptyState(): GameState {
     memory: 0,
     firstPlayer: 0,
     winner: null,
+    attack: null,
     log: [],
     nextIid: 1,
     mulliganed: [],
@@ -296,6 +297,7 @@ function build(state: GameState, list: DeckList, owner: PlayerId): [CardInstance
  * an ordinary pass gives them 3, per the comprehensive rules.
  */
 function passTurn(state: GameState, memory: number, why: string) {
+  state.attack = null
   const from = state.turnPlayer
   state.turnPlayer = other(state.turnPlayer)
   state.memory = Math.max(0, Math.min(memory, MEMORY_MAX))
@@ -560,6 +562,43 @@ export function apply(state: GameState, action: Action): GameState {
       egg.faceDown = false
       me.breeding.push(egg)
       log(next, action.by, `${nameOf(next, action.by)} hatches ${egg.cardId}`)
+      break
+    }
+
+    case 'attack': {
+      assertTurn(next, action)
+      const attacker = need(next, action, action.iid)
+      assertOwn(action, attacker)
+      if (attacker.zone !== 'battle') {
+        throw new IllegalAction(action, 'only a Digimon in the battle area can attack')
+      }
+
+      let what = nameOf(next, other(action.by))
+      if (action.target !== 'player') {
+        const target = need(next, action, action.target)
+        if (target.instance.owner === action.by) {
+          throw new IllegalAction(action, 'you cannot attack your own Digimon')
+        }
+        if (target.zone !== 'battle') {
+          throw new IllegalAction(action, 'that card is not in the battle area')
+        }
+        what = target.instance.cardId
+      }
+
+      // Declaring an attack suspends the attacker (11-2-1). That is mechanical
+      // and always true, so the simulator does it rather than making the player
+      // remember. Everything conditional -- summoning sickness, whether the
+      // target may legally be attacked, counter and block timings -- is left to
+      // the players, because it depends on card text this reducer never reads.
+      attacker.instance.suspended = true
+      next.attack = { attacker: action.iid, target: action.target }
+      log(next, action.by, `${attacker.instance.cardId} attacks ${what}`)
+      break
+    }
+
+    case 'endAttack': {
+      next.attack = null
+      log(next, action.by, 'attack ends')
       break
     }
 

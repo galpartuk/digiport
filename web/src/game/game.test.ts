@@ -554,6 +554,73 @@ describe('suspending and counters', () => {
   })
 })
 
+describe('attack declarations', () => {
+  it('suspends the attacker and records the target Digimon', () => {
+    let s = playToBattle(game, 0)
+    s = playToBattle(s, 1)
+    const mine = s.players[0].battle[0].iid
+    const theirs = s.players[1].battle[0].iid
+    const declared = apply(s, act.attack(0, mine, theirs))
+
+    expect(declared.attack).toEqual({ attacker: mine, target: theirs })
+    // 11-2-1: declaring an attack suspends the attacker. Mechanical, so we do it.
+    expect(declared.players[0].battle[0].suspended).toBe(true)
+    expect(declared.log.at(-1)!.text).toContain('attacks')
+  })
+
+  it('records an attack on the player themselves', () => {
+    const s = playToBattle(game, 0)
+    const mine = s.players[0].battle[0].iid
+    const declared = apply(s, act.attack(0, mine, 'player'))
+    expect(declared.attack).toEqual({ attacker: mine, target: 'player' })
+    expect(declared.log.at(-1)!.text).toContain('Daniel')
+  })
+
+  it('clears on endAttack and whenever the turn passes', () => {
+    const s = playToBattle(game, 0)
+    const mine = s.players[0].battle[0].iid
+    const declared = apply(s, act.attack(0, mine, 'player'))
+    expect(apply(declared, act.endAttack(0)).attack).toBeNull()
+    expect(apply(declared, act.endTurn(0)).attack).toBeNull()
+    expect(apply(declared, act.payMemory(0, 20)).attack).toBeNull()
+  })
+
+  it('refuses an attacker that is not yours, or not in the battle area', () => {
+    let s = playToBattle(game, 0)
+    s = playToBattle(s, 1)
+    const theirs = s.players[1].battle[0].iid
+    expect(() => apply(s, act.attack(0, theirs, 'player'))).toThrow(/other player/)
+    const inHand = s.players[0].hand[0].iid
+    expect(() => apply(s, act.attack(0, inHand, 'player'))).toThrow(/battle area/)
+  })
+
+  it('refuses to attack your own Digimon, and refuses out of turn', () => {
+    let s = playToBattle(game, 0)
+    s = playToBattle(s, 0)
+    const [a, b] = s.players[0].battle.map((c) => c.iid)
+    expect(() => apply(s, act.attack(0, a, b))).toThrow(/your own/)
+    expect(() => apply(s, act.attack(1, a, 'player'))).toThrow(/only the turn player/)
+  })
+
+  it('leaves everything the rules put around an attack to the players', () => {
+    // Summoning sickness (7-1-2-1) and "only suspended Digimon may be targeted"
+    // (11-2-7-1) both depend on state this reducer deliberately does not police.
+    let s = playToBattle(game, 0)
+    s = playToBattle(s, 1)
+    const mine = s.players[0].battle[0].iid
+    const freshTarget = s.players[1].battle[0].iid
+    expect(s.players[1].battle[0].suspended).toBe(false)
+    expect(() => apply(s, act.attack(0, mine, freshTarget))).not.toThrow()
+  })
+
+  it('is visible to both seats and to a spectator', () => {
+    const s = apply(playToBattle(game, 0), act.attack(0, playToBattle(game, 0).players[0].battle[0].iid, 'player'))
+    for (const viewer of [0, 1, 'spectator'] as const) {
+      expect(viewFor(s, viewer).attack).toEqual(s.attack)
+    }
+  })
+})
+
 describe('security and reveal', () => {
   it("flips the top of the opponent's security into their reveal area", () => {
     const top = game.players[1].security[0]
@@ -817,6 +884,10 @@ describe('every action type is exercised', () => {
     run(act.setCounters(0, played, 1))
     run(act.setMemory(0, 5))
     run(act.payMemory(0, 1))
+    const foe = playToBattle(s, 1).players[1].battle[0]
+    s = playToBattle(s, 1)
+    run(act.attack(0, s.players[0].battle[0].iid, foe.iid))
+    run(act.endAttack(0))
     run(act.securityCheck(0))
     run(act.revealTop(0, 1))
     run(act.revealHand(0))
@@ -831,7 +902,8 @@ describe('every action type is exercised', () => {
     const every: Action['t'][] = [
       'setup', 'mulligan', 'draw', 'shuffleDeck', 'shuffleSecurity', 'hatch', 'move', 'digivolve',
       'deDigivolve', 'attach', 'suspend', 'unsuspend', 'unsuspendAll', 'setDp', 'setCounters',
-      'setMemory', 'payMemory', 'nextPhase', 'endTurn', 'securityCheck', 'revealTop',
+      'setMemory', 'payMemory', 'nextPhase', 'endTurn', 'attack', 'endAttack',
+      'securityCheck', 'revealTop',
       'revealHand', 'flip', 'concede', 'chat', 'undoRequest', 'undoAccept', 'undoDecline',
     ]
     expect([...every].filter((t) => !seen.has(t))).toEqual([])

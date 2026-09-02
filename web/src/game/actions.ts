@@ -47,6 +47,9 @@ export const act = {
   nextPhase: (by: PlayerId): Action => ({ t: 'nextPhase', by }),
   endTurn: (by: PlayerId): Action => ({ t: 'endTurn', by }),
 
+  attack: (by: PlayerId, iid: Iid, target: Iid | 'player'): Action =>
+    ({ t: 'attack', by, iid, target }),
+  endAttack: (by: PlayerId): Action => ({ t: 'endAttack', by }),
   securityCheck: (by: PlayerId): Action => ({ t: 'securityCheck', by }),
   revealTop: (by: PlayerId, n = 1): Action => ({ t: 'revealTop', by, n }),
   revealHand: (by: PlayerId): Action => ({ t: 'revealHand', by }),
