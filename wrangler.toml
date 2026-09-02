@@ -1,8 +1,13 @@
+# NOT the active target. Digiport is published to GitHub Pages, by
+# .github/workflows/pages.yml, at https://galpartuk.github.io/digiport/. This
+# file and the Cloudflare workflow are kept as a ready alternative: that
+# workflow is manual-dispatch only, so nothing here runs unless asked.
+#
 # Static-asset Worker for the Digiport deck builder, mirroring the tcgdles
 # setup. `npm run build` in web/ produces web/dist; this ships it.
 #
-# Deploys happen from GitHub Actions (.github/workflows/deploy.yml) using the
-# CLOUDFLARE_API_TOKEN and CLOUDFLARE_ACCOUNT_ID repository secrets.
+# A manual run of .github/workflows/deploy.yml uses the CLOUDFLARE_API_TOKEN
+# and CLOUDFLARE_ACCOUNT_ID repository secrets.
 name = "digiport"
 compatibility_date = "2026-08-15"
 workers_dev = true

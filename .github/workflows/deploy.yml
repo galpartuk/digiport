@@ -1,18 +1,21 @@
-# Every push to main type-checks and builds the deck builder, runs the vitest
-# suite against the real card payload, and only then ships web/dist to the
-# digiport Cloudflare Worker.
+# DORMANT. The live target is GitHub Pages (.github/workflows/pages.yml); this
+# workflow no longer runs on push, only when started by hand from the Actions
+# tab. It is kept so Cloudflare Workers stays one click away if Pages is ever
+# outgrown -- wrangler.toml is still in place and still correct.
+#
+# It type-checks and builds the deck builder, runs the vitest suite against the
+# real card payload, and only then ships web/dist to the digiport Cloudflare
+# Worker.
 #
 # Needs two repository secrets (Settings -> Secrets and variables -> Actions):
 #   CLOUDFLARE_API_TOKEN   a token with the "Edit Cloudflare Workers" template
 #   CLOUDFLARE_ACCOUNT_ID  the account the digiport worker lives in
 # Without them the deploy step fails and nothing is published.
 
-name: Deploy
+name: Deploy (Cloudflare, manual)
 
 on:
-  push:
-    branches: [main]
-  workflow_dispatch:        # a deploy button, for re-shipping without a commit
+  workflow_dispatch:        # manual only -- Pages owns the push-to-main deploy
 
 # One deploy at a time, and never cancel one halfway: two overlapping wrangler
 # runs would race to upload the same asset manifest.

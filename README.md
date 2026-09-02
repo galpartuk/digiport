@@ -63,9 +63,23 @@ and change that one function.
 
 ## Deploying
 
-`git push` to `main` runs `.github/workflows/deploy.yml`, which builds, tests
-and then `wrangler deploy`s to the `digiport` Worker. It needs the
-`CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` repository secrets.
+Live at **https://galpartuk.github.io/digiport/**.
+
+`git push` to `main` runs `.github/workflows/pages.yml`, which installs, runs
+the vitest suite, builds, and publishes `web/dist` to GitHub Pages. A red suite
+stops the deploy, so the live site is only ever a build that passed. No secrets
+are involved — Pages publishes from the build artifact.
+
+It serves from the `/digiport/` subpath because `web/vite.config.ts` sets
+`base: './'` and `src/cards.ts` fetches through `import.meta.env.BASE_URL`, so
+assets and both data files resolve relative to the served page. Changing that
+`base` would break `data/cards.json` on the live site while leaving `npm run
+dev` working, so leave it relative.
+
+Cloudflare Workers is kept as a dormant alternative: `wrangler.toml` is still
+correct and `.github/workflows/deploy.yml` still works, but it is
+`workflow_dispatch` only — run it by hand from the Actions tab, with the
+`CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` repository secrets set.
 
 ## Disclaimer
 
