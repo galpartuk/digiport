@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { imageUrl, type Card, type Meta } from '../cards'
-import { copyLimit } from '../deck'
+import { copyLimit, MAX_COPIES } from '../deck'
 
 const PAGE = 60
 
@@ -36,7 +36,7 @@ function Tile({ card, meta, count, onAdd, onRemove, onHover }: TileProps) {
       />
       {count > 0 && <span className="tile-count">{count}</span>}
       {limit === 0 && <span className="tile-flag banned">BANNED</span>}
-      {limit === 1 && <span className="tile-flag">1</span>}
+      {limit > 0 && limit !== MAX_COPIES && <span className="tile-flag">{limit}</span>}
     </button>
   )
 }

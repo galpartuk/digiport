@@ -31,19 +31,43 @@ export function total(pile: Record<string, number>): number {
   return n
 }
 
-/** Copies allowed by the ban list. Regular cards cap at 4. */
+/**
+ * A handful of cards raise their own ceiling in their rule text — the Training
+ * options and friends read "[Rule] You can include up to 50 copies of cards
+ * with this card's card number in your deck." The number is parsed rather than
+ * hardcoded, so a future card that says 30 needs no code change.
+ */
+const OWN_LIMIT = /include up to (\d+) copies of cards with this card's card number/i
+
+/**
+ * Reprints that share a printing's copy allowance with the original, e.g.
+ * "[Rule] Card Number: Also treated as [P-009]. A deck may not have more than
+ * 4 total copies of this and [P-009]." — the pair is capped together.
+ */
+const SHARED_LIMIT = /may not have more than (\d+) total copies of this and \[([A-Za-z0-9_-]+)\]/i
+
+/** Copies allowed by the ban list and the card's own rule text. */
 export function copyLimit(card: Card): number {
   if (card.restriction === 'Banned') return 0
   if (card.restriction === 'Restricted to 1') return 1
-  return MAX_COPIES
+  const own = card.rule ? OWN_LIMIT.exec(card.rule) : null
+  return own ? Number(own[1]) : MAX_COPIES
+}
+
+/** The other card number this one shares its allowance with, and the cap. */
+export function sharedLimit(card: Card): { partner: string; limit: number } | null {
+  const m = card.rule ? SHARED_LIMIT.exec(card.rule) : null
+  return m ? { partner: m[2].toUpperCase(), limit: Number(m[1]) } : null
 }
 
 export function addCard(deck: Deck, card: Card, delta = 1): Deck {
   const slot = slotFor(card)
   const pile = { ...deck[slot] }
-  const next = (pile[card.id] ?? 0) + delta
-  if (next <= 0) delete pile[card.id]
-  else pile[card.id] = Math.min(next, copyLimit(card))
+  // A banned card caps at zero, which must mean "not in the deck" rather than
+  // an entry sitting there at 0.
+  const capped = Math.min((pile[card.id] ?? 0) + delta, copyLimit(card))
+  if (capped <= 0) delete pile[card.id]
+  else pile[card.id] = capped
   return { ...deck, [slot]: pile, updatedAt: Date.now() }
 }
 
@@ -80,6 +104,20 @@ export function validate(deck: Deck, index: CardIndex): Problem[] {
         text: `${n}x ${card.name} (${id}) — limit is ${limit}.`,
       })
     }
+    // A reprint that shares its allowance with the original printing: the two
+    // card numbers are capped together, not separately.
+    const shared = sharedLimit(card)
+    if (shared) {
+      const together = n + count(deck, shared.partner)
+      if (together > shared.limit) {
+        problems.push({
+          level: 'error',
+          text: `${together}x ${card.name} counting ${id} and ${shared.partner} together — ` +
+            `limit is ${shared.limit} across both.`,
+        })
+      }
+    }
+
     if (card.restriction === 'Choice Restriction') choiceRestricted.push(`${card.name} (${id})`)
     if (!card.released) {
       problems.push({ level: 'warn', text: `${card.name} (${id}) is not released in English yet.` })

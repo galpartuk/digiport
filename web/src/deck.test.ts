@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
-  addCard, copyLimit, count, exportText, importDeck, newDeck, stats, total, validate,
-  EGG_SIZE, MAIN_SIZE, type Deck,
+  addCard, copyLimit, count, exportText, importDeck, newDeck, sharedLimit, stats, total,
+  validate, EGG_SIZE, MAIN_SIZE, MAX_COPIES, type Deck,
 } from './deck'
 import type { Card } from './cards'
 import { pick, realIndex } from './testIndex'
@@ -42,10 +42,27 @@ describe('addCard', () => {
     expect(copyLimit(limitedToOne)).toBe(1)
   })
 
-  it('refuses to hold a banned card', () => {
+  it('refuses to hold a banned card, without leaving an entry at zero', () => {
     const deck = addCard(newDeck(), banned, 3)
     expect(copyLimit(banned)).toBe(0)
     expect(count(deck, banned.id)).toBe(0)
+    // A 0-count entry would still draw a row in the deck panel.
+    expect(banned.id in deck.main).toBe(false)
+    expect(banned.id in deck.eggs).toBe(false)
+    expect(Object.keys(deck.main)).toEqual([])
+  })
+
+  it('lets a card raise its own ceiling from its rule text', () => {
+    const fifty = pick(index, 'a card that allows 50 copies', (c) =>
+      /include up to 50 copies/i.test(c.rule ?? ''))
+    expect(copyLimit(fifty)).toBe(50)
+    const deck = addCard(newDeck(), fifty, 60)
+    expect(deck.main[fifty.id]).toBe(50)
+    expect(validate(deck, index).some((p) => p.text.includes('limit is'))).toBe(false)
+  })
+
+  it('still caps an ordinary card at four even next to an unlimited one', () => {
+    expect(copyLimit(unrestricted)).toBe(MAX_COPIES)
   })
 
   it('puts Digi-Eggs in the egg deck and everything else in main', () => {
@@ -101,6 +118,20 @@ describe('validate', () => {
     const texts = validate(deck, index).map((p) => p.text)
     expect(texts.some((t) => t.includes('is banned'))).toBe(true)
     expect(texts.some((t) => t.includes('limit is 1'))).toBe(true)
+  })
+
+  it('catches a reprint pair that shares one four-copy allowance', () => {
+    const reprint = pick(index, 'a reprint sharing a limit', (c) => sharedLimit(c) !== null)
+    const { partner, limit } = sharedLimit(reprint)!
+    expect(index.byId.get(partner)).toBeDefined()
+
+    const legal: Deck = { ...newDeck(), main: { [reprint.id]: 2, [partner]: 2 } }
+    expect(validate(legal, index).some((p) => p.text.includes('together'))).toBe(false)
+
+    const over: Deck = { ...newDeck(), main: { [reprint.id]: 3, [partner]: 2 } }
+    const problem = validate(over, index).find((p) => p.text.includes('together'))
+    expect(problem?.level).toBe('error')
+    expect(problem?.text).toContain(`limit is ${limit} across both`)
   })
 
   it('warns about a card that is not released in English', () => {
