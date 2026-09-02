@@ -70,27 +70,61 @@ digiport/
 
 ## Phases
 
-### Phase 0 — Deck builder (in progress, ~1 week)
+### Phase 0 — Deck builder — DONE, live at galpartuk.github.io/digiport
 - [x] card payload, index, filters, grid, detail panel
-- [ ] deck panel: main 50 / eggs 0–5, 4-copy cap, ban list, colour + level curve
-- [ ] validation messages, deck list persistence (localStorage), rename/duplicate/delete
-- [ ] import/export in the common text format (`4 BT1-010`), which Drasil,
+- [x] deck panel: main 50 / eggs 0-5, 4-copy cap, ban list, colour + level curve
+- [x] validation messages, deck list persistence (localStorage), rename/duplicate/delete
+- [x] import/export in the common text format (`4 BT1-010`), which Drasil,
       digimoncard.dev and TTS all read — instant migration for existing players
-- [ ] share deck via URL (compressed card list in the hash)
-- [ ] deploy as static site (Cloudflare Pages / tcgdles worker) to get feedback early
+- [x] share deck via URL (compressed card list in the hash)
+- [x] deploy as a static site — GitHub Pages, tests gate the deploy
+- [x] sort the grid by name / number / cost / level / DP / set release
+- [x] trait filter, with traits and sets folded into a searchable picker
 
-### Phase 1 — Board, solo & hotseat (~3–4 weeks)
-- [ ] `game/` types: zones (deck, hand, security, breeding egg deck, breeding
-      area, battle area, trash, reveal), card instances with stack + attached
-      (plug-ins, link cards), suspended flag, DP mods, memory, turn, phase
-- [ ] actions: draw, mulligan, hatch, move (any zone→zone, top/bottom), digivolve
-      onto, de-digivolve, attach, suspend, set memory, security check/reveal/
-      recover, shuffle, reveal hand/deck top N, counters, concede, chat
-- [ ] reducer + tests (vitest): every action, undo, log replay
-- [ ] board UI: drag & drop (dnd-kit or pointer events), context menus,
-      zoom-on-hover card, opponent view mirrored, phase bar, memory gauge, log panel
-- [ ] "Goldfish" mode: play against an empty seat to test decks
-- [ ] hotseat: both players on one screen, hidden zones blurred per turn
+### Phase 1 — Board, solo & hotseat — DONE
+- [x] `game/` types: zones, card instances with stack + attached, suspended,
+      DP mods, memory, turn, phase
+- [x] actions: draw, mulligan, hatch, move, digivolve, de-digivolve, attach,
+      suspend, memory, security check/reveal, shuffle, counters, concede, chat
+- [x] reducer + tests (vitest): every action, undo, log replay, random walk
+- [x] board UI: dnd-kit drag & drop, context menus, hover card, mirrored
+      opponent, phase bar, memory gauge, log panel
+- [x] "Goldfish" mode: play against an empty seat to test decks
+- [x] hotseat: both players on one screen, pass-device scrim between turns
+
+### Phase 1.5 — App shell and navigation (next)
+
+The deck builder is currently the front page, which is wrong: it is one tool
+among several and it is the least useful thing to land a first-time visitor on.
+
+- [ ] a real home page at `/` — what Digiport is, what you can do, entry points
+      to build a deck / goldfish / hotseat, and the Bandai disclaimer
+- [ ] move the deck builder to its own route (`/decks`) and the board stays at
+      `/play`
+- [ ] a persistent top nav across every route, with the current one marked
+- [ ] **share links must keep working.** Today's links are `#/?d=<payload>` and
+      the older `#d=<payload>`, both of which mean "open this deck in the
+      builder". Moving the builder off `/` must not break either; the root route
+      has to keep adopting a `d=` payload and then send the user to the builder.
+- [ ] the board is full-screen and has its own Exit; it should not grow a second
+      nav bar on top of the rail
+
+### Known gaps left by Phase 1
+
+Worth closing before or during Phase 2, since online play makes them worse:
+
+- [ ] **Your own security stack is hidden from you**, so `flip` on a specific
+      security card has no reachable instance id. Same root cause as hatching
+      (which got a positional `hatch` action); this wants the same treatment.
+- [ ] **You cannot suspend, shrink or otherwise touch an opponent's Digimon.**
+      The reducer only lets you push an opponent's card to reveal/trash/hand/
+      deck/security. A great many real cards ask for exactly this, so the
+      ownership rule needs widening — deliberately, with tests.
+- [ ] **Security → Play is disabled**, because the revealed card sits in the
+      opponent's reveal area and `move` to battle is not permitted for it.
+      Falls out of the same rule.
+- [ ] attack targeting arrows and the security-battle helper (compare DP,
+      prompt outcome) from the assists list are not built yet
 
 ### Phase 2 — Online play (~2 weeks)
 - [ ] Room Durable Object: state, action validation (is it your turn / your
