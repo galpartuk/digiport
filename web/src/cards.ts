@@ -25,6 +25,10 @@ export type Card = {
   digivolveCondition?: DigivolveCondition[]
   digiXros?: string
   dnaDigivolve?: string
+  /** Assembly requirements — cards taken from the trash and placed under (7-3). */
+  assembly?: string
+  /** Burst Digivolve requirements (8-3). */
+  burstDigivolve?: string
   aceEffect?: string
   linkRequirement?: string
   linkDP?: number
@@ -81,7 +85,7 @@ function haystack(c: Card): string {
   return [
     c.id, c.name, c.jp, c.form, c.attribute, c.rarity,
     c.types?.join(' '), c.effect, c.inheritedEffect, c.securityEffect,
-    c.aceEffect, c.digiXros, c.dnaDigivolve, c.rule,
+    c.aceEffect, c.digiXros, c.dnaDigivolve, c.assembly, c.burstDigivolve, c.rule,
   ].filter(Boolean).join(' ').toLowerCase()
 }
 

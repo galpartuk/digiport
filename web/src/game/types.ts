@@ -144,7 +144,7 @@ export type Action =
    * puts a card on top; this is the other direction, and there was no way to
    * express it.
    */
-  | { t: 'placeUnder'; by: PlayerId; iid: Iid; targetIid: Iid; position?: 'top' | 'bottom' }
+  | { t: 'placeUnder'; by: PlayerId; iids: Iid[]; targetIid: Iid; position?: 'top' | 'bottom' }
   | { t: 'suspend'; by: PlayerId; iid: Iid }
   | { t: 'unsuspend'; by: PlayerId; iid: Iid }
   | { t: 'unsuspendAll'; by: PlayerId }

@@ -32,8 +32,13 @@ export const act = {
   deDigivolve: (by: PlayerId, iid: Iid, n = 1): Action => ({ t: 'deDigivolve', by, iid, n }),
   attach: (by: PlayerId, iid: Iid, targetIid: Iid): Action =>
     ({ t: 'attach', by, iid, targetIid }),
-  placeUnder: (by: PlayerId, iid: Iid, targetIid: Iid, position: 'top' | 'bottom' = 'top'): Action =>
-    ({ t: 'placeUnder', by, iid, targetIid, position }),
+  placeUnder: (
+    by: PlayerId,
+    iids: Iid | Iid[],
+    targetIid: Iid,
+    position: 'top' | 'bottom' = 'top',
+  ): Action =>
+    ({ t: 'placeUnder', by, iids: Array.isArray(iids) ? iids : [iids], targetIid, position }),
 
   suspend: (by: PlayerId, iid: Iid): Action => ({ t: 'suspend', by, iid }),
   unsuspend: (by: PlayerId, iid: Iid): Action => ({ t: 'unsuspend', by, iid }),

@@ -483,33 +483,37 @@ export function apply(state: GameState, action: Action): GameState {
       if (target.zone !== 'battle' && target.zone !== 'breeding') {
         throw new IllegalAction(action, 'you can only place a card under a card in play')
       }
-      const source = need(next, action, action.iid)
-      if (source.instance.iid === target.instance.iid) {
-        throw new IllegalAction(action, 'a card cannot go under itself')
-      }
-      if (source.zone === 'deck' || source.zone === 'eggDeck' || source.zone === 'security') {
-        throw new IllegalAction(action, 'that card is in a hidden pile')
-      }
+      if (!action.iids.length) throw new IllegalAction(action, 'no cards to place')
 
-      const moved = source.instance
-      lift(next, source)
-
-      // 4-9-6: a card that becomes a new card loses its link cards, and 4-7-7
-      // puts stacked cards off the field entirely, so anything plugged into the
-      // moved card is trashed rather than riding along.
-      for (const plug of moved.attached) {
-        plug.faceDown = false
-        plug.suspended = false
-        next.players[plug.owner].trash.unshift(plug)
-      }
-      // Its own sources travel with it, keeping their order (4-7-3).
-      const buried = [...moved.stack, moved.cardId]
       const under = target.instance
-      under.stack = action.position === 'bottom'
-        ? [...buried, ...under.stack]
-        : [...under.stack, ...buried]
+      const names: string[] = []
+      for (const iid of action.iids) {
+        if (iid === under.iid) throw new IllegalAction(action, 'a card cannot go under itself')
+        const source = need(next, action, iid)
+        if (source.zone === 'deck' || source.zone === 'eggDeck' || source.zone === 'security') {
+          throw new IllegalAction(action, 'that card is in a hidden pile')
+        }
 
-      log(next, action.by, `${nameOf(next, action.by)} places ${moved.cardId} under ` +
+        const moved = source.instance
+        lift(next, source)
+
+        // 4-9-6: a card that becomes a new card loses its link cards, and 4-7-7
+        // puts stacked cards off the field entirely, so anything plugged into
+        // the moved card is trashed rather than riding along.
+        for (const plug of moved.attached) {
+          plug.faceDown = false
+          plug.suspended = false
+          next.players[plug.owner].trash.unshift(plug)
+        }
+        // Its own sources travel with it, keeping their order (4-7-3).
+        const buried = [...moved.stack, moved.cardId]
+        under.stack = action.position === 'bottom'
+          ? [...buried, ...under.stack]
+          : [...under.stack, ...buried]
+        names.push(moved.cardId)
+      }
+
+      log(next, action.by, `${nameOf(next, action.by)} places ${names.join(', ')} under ` +
         `${under.cardId} (${under.stack.length} source${under.stack.length === 1 ? '' : 's'})`)
       break
     }

@@ -13,6 +13,9 @@ import collections
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 SRC = os.path.join(HERE, "..", "digimondle", "data", "build", "cards.json")
+# digimondle's build does not carry Assembly or Burst Digivolve through, so those
+# two come straight from the TakaOtaku file it already downloads. Read-only.
+RAW = os.path.join(HERE, "..", "digimondle", "data", "raw", "takaotaku_cards.json")
 OUT_DIR = os.path.join(HERE, "web", "public", "data")
 
 # Host code -> URL template, re-expanded client-side in src/cards.ts
@@ -31,6 +34,10 @@ KEEP = [
     "rule", "restriction", "released", "altArtCount", "tcgplayerId",
     "setReleased",
 ]
+
+# Requirement text the board turns into a "you can do this" button. Each names
+# the other cards involved, which is what makes an assisted picker possible.
+EXTRA = {"assembly": "assembly", "burstDigivolve": "burstDigivolve"}
 
 
 def host_code(card):
@@ -62,9 +69,37 @@ def is_released(card):
     return bool(card.get("printedIn"))
 
 
+def extras():
+    """Assembly and Burst Digivolve text, keyed by card number.
+
+    TakaOtaku writes "-" for a card that has none, which is not the same as
+    having one, so those are dropped rather than shipped as a literal dash.
+    """
+    try:
+        with open(RAW, encoding="utf-8") as fh:
+            raw = json.load(fh)
+    except FileNotFoundError:
+        print("note: raw TakaOtaku file missing, Assembly/Burst omitted")
+        return {}
+    out = {}
+    for row in raw:
+        number = row.get("cardNumber")
+        if not number:
+            continue
+        picked = {}
+        for src_key, out_key in EXTRA.items():
+            text = (row.get(src_key) or "").strip()
+            if text and text != "-":
+                picked[out_key] = text
+        if picked:
+            out[number] = picked
+    return out
+
+
 def main():
     with open(SRC, encoding="utf-8") as fh:
         source = json.load(fh)
+    extra = extras()
 
     seen, cards = set(), []
     for card in source:
@@ -78,6 +113,8 @@ def main():
         out["id"] = cid
         out["released"] = is_released(card)
         out["h"] = host_code(card)
+
+        out.update(extra.get(cid, {}))
 
         jp = (card.get("names") or {}).get("japanese")
         if jp:
@@ -110,6 +147,9 @@ def main():
     hidden = [c["id"] for c in cards if not c["released"]]
     promoted = sum(1 for c in source
                    if c.get("cardType") and not c.get("released") and c.get("printedIn"))
+    for key in EXTRA.values():
+        print("%-11s%7d   cards with %s requirements"
+              % ("", sum(1 for c in cards if c.get(key)), key))
     print("released   %7d   (%d promoted past a stale flag)  still hidden: %s"
           % (sum(1 for c in cards if c["released"]), promoted, ", ".join(hidden) or "none"))
 

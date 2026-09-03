@@ -482,6 +482,28 @@ describe('placeUnder', () => {
     expect(() => apply(s, act.placeUnder(0, theirs, mine))).not.toThrow()
   })
 
+  it('buries several cards at once, in the order given', () => {
+    let s = playToBattle(game, 0)
+    const host = s.players[0].battle[0].iid
+    const [a, b, c] = s.players[0].hand.slice(0, 3)
+    const ids = [a.cardId, b.cardId, c.cardId]
+
+    const under = apply(s, act.placeUnder(0, [a.iid, b.iid, c.iid], host))
+    expect(under.players[0].battle[0].stack).toEqual(ids)
+    expect(under.players[0].hand).toHaveLength(OPENING_HAND - 4)
+    expect(countCards(under)).toBe(countCards(s))
+    assertIntegrity(under)
+
+    // One action, one log line — a three-card DigiXros is one step to undo.
+    expect(under.log.length).toBe(s.log.length + 1)
+  })
+
+  it('refuses an empty list', () => {
+    const s = playToBattle(game, 0)
+    expect(() => apply(s, act.placeUnder(0, [], s.players[0].battle[0].iid)))
+      .toThrow(/no cards/)
+  })
+
   it('refuses a hidden pile, a non-play target, and itself', () => {
     const s = playToBattle(game, 0)
     const host = s.players[0].battle[0].iid
