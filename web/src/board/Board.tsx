@@ -19,6 +19,7 @@ import { ContextMenu, type MenuItem } from './ContextMenu'
 import { useBattleFit } from './fit'
 import { RulePicker } from './RulePicker'
 import { RULE_BADGE, offeredIn, ruleHint, ruleOn, rulesOn, type RuleKind, type RuleSpec } from './rules'
+import { TokenPicker } from './TokenPicker'
 
 /** Where the front-row / back-row preference is remembered. */
 const ROWS_KEY = 'digiport.board.rows'
@@ -53,6 +54,16 @@ const PHASE_HINT: Record<string, string> = {
   breeding: 'Breeding phase — hatch, or move your Digimon out. Exactly one (6-4-1)',
   main: 'Main phase — play, digivolve, attack, or pass (6-5-1)',
 }
+
+/**
+ * How many cards the deck-top controls take at a time.
+ *
+ * The same row of stops as REVEAL TOP, and deliberately so: revealing the top
+ * n, trashing the top n and <Recovery> n are one gesture aimed at three
+ * destinations, and a player should not have to learn a second way of saying
+ * "three" halfway down the rail.
+ */
+const TOP_COUNTS = [1, 2, 3, 4, 5]
 
 /**
  * Drop-target ids are strings because dnd-kit compares them by identity. The
@@ -652,6 +663,39 @@ function menuFor(
       onMoved(m.to)
     }))
 
+  /*
+    §4-21, and it is a short menu because a token can do very little.
+
+    Every entry under "Move to" would be a lie: §4-21-5 removes a token from the
+    game the moment it leaves the field, so "Hand" and "Trash" and "Deck — top"
+    all mean the same single thing, and none of them means what they say. The
+    one honest way to say it is said once. Digivolving, placing under and
+    linking are gone for the same reason the drop menu drops them — §4-21-3 and
+    §4-21-4 — and a token has no card in the pool, so it has no rule buttons,
+    no printed DP and nothing to read.
+  */
+  if (card.token) {
+    const mine = owner === seat
+    return [
+      { kind: 'title', label: `${name} — token (§4-21)` },
+      ...(mine && inPlay
+        ? [
+          item(card.suspended ? 'Unsuspend' : 'Suspend', () =>
+            dispatch(card.suspended ? act.unsuspend(seat, iid) : act.suspend(seat, iid))),
+          item('DP +1000', () => dispatch(act.setDp(seat, iid, 1000))),
+          item('DP −1000', () => dispatch(act.setDp(seat, iid, -1000))),
+          item('Counter +', () => dispatch(act.setCounters(seat, iid, 1))),
+          item('Counter −', () => dispatch(act.setCounters(seat, iid, -1))),
+          { kind: 'sep' } as MenuItem,
+        ]
+        : []),
+      ...(zone === 'battle' && mine
+        ? [item('Attack…', () => onAttack(iid)), { kind: 'sep' } as MenuItem]
+        : []),
+      item('Delete — it leaves the game (§4-21-5)', () => dispatch(act.deleteCard(seat, iid))),
+    ]
+  }
+
   if (owner !== seat) {
     return [
       { kind: 'title', label: `${name} — opponent's` },
@@ -828,6 +872,8 @@ export function Board({ view, seat, index, dispatch, onUndo, onExit, refused }: 
   const [offer, setOffer] = useState<CostOffer | null>(null)
   /** A card dropped onto another card, waiting for its verb. See `DropChoice`. */
   const [dropChoice, setDropChoice] = useState<DropChoice | null>(null)
+  /** Is the token picker up? See `TokenPicker` and `tokens.ts`. */
+  const [tokenPick, setTokenPick] = useState(false)
   /**
    * Front row / back row. A layout preference, not game state — which is why it
    * is the one thing on this board that touches storage: it belongs to the
@@ -1056,11 +1102,40 @@ export function Board({ view, seat, index, dispatch, onUndo, onExit, refused }: 
       if (mine) {
         items.push({ kind: 'item', label: 'Draw 1', run: () => dispatch(act.draw(seat, 1)) })
         items.push({ kind: 'sep' })
-        for (const count of [1, 2, 3, 4, 5]) {
+        for (const count of TOP_COUNTS) {
           items.push({
             kind: 'item',
             label: `Reveal top ${count}`,
             run: () => dispatch(act.revealTop(seat, count)),
+          })
+        }
+        /*
+          The two other things the game asks a deck top to do, and neither was
+          reachable until `deckTop` existed. Both are positional — the deck is a
+          private area (§3-2-2) and `viewFor` masks every card in it, so there
+          is no instance id here that a `move` could name.
+        */
+        items.push({ kind: 'sep' })
+        for (const count of TOP_COUNTS) {
+          items.push({
+            kind: 'item',
+            label: `Trash top ${count}`,
+            run: () => dispatch(act.deckTop(seat, count, 'trash')),
+          })
+        }
+        items.push({ kind: 'sep' })
+        items.push({
+          kind: 'title',
+          label: '<Recovery> — face down onto security (§16-6)',
+        })
+        for (const count of TOP_COUNTS) {
+          items.push({
+            kind: 'item',
+            // No card is named: it goes from one private area (§3-2-2) to
+            // another (§3-7-2), and saying it out loud would tell both players
+            // what the next security check turns up.
+            label: `Recovery ${count}`,
+            run: () => dispatch(act.deckTop(seat, count, 'security')),
           })
         }
         items.push({ kind: 'sep' })
@@ -1135,6 +1210,24 @@ export function Board({ view, seat, index, dispatch, onUndo, onExit, refused }: 
     const items: MenuItem[] = [
       { kind: 'title', label: `${moving} → ${nameFor(target)}` },
     ]
+
+    /*
+      §4-21-3 and §4-21-4: a token cannot be stacked with in either direction,
+      and cannot be linked or linked to. All three of the verbs below are
+      therefore off, and the reducer refuses every one of them. The menu says so
+      rather than listing three lines that can only produce a red refusal —
+      dropping onto a token should not even be reachable (BoardCard turns the
+      drop target off), so this is the case of a token being dragged onto a card.
+    */
+    const fromToken = inPlay.get(from.iid)?.card.token === true
+    if (fromToken || target?.token) {
+      return [
+        ...items,
+        { kind: 'title', label: 'A token cannot be stacked with or linked (§4-21-3, §4-21-4)' },
+        { kind: 'sep' },
+        item('Cancel', () => undefined),
+      ]
+    }
 
     // §8, §3-4-5: on top, and the Digimon changes into it.
     if (mine && (from.zone === 'hand' || from.zone === 'reveal' || from.zone === 'battle')) {
@@ -1723,7 +1816,7 @@ export function Board({ view, seat, index, dispatch, onUndo, onExit, refused }: 
             */}
             <div className="reveal-bar">
               <span className="zone-label">Reveal top</span>
-              {[1, 2, 3, 4, 5].map((n) => (
+              {TOP_COUNTS.map((n) => (
                 <button
                   key={n}
                   type="button"
@@ -1746,6 +1839,67 @@ export function Board({ view, seat, index, dispatch, onUndo, onExit, refused }: 
             </div>
 
             {/*
+              The other two things a deck top is asked to do, on the same row of
+              stops as the reveal above them because they are the same gesture.
+
+              "Trash the top 3 cards of your deck" is the commonest line in the
+              game that a reveal cannot express — a reveal is a staging area the
+              player then has to sweep — and <Recovery> (§16-6) had no route at
+              all. Both go straight from the deck without passing through the
+              reveal tray, which is what `deckTop` is for: the deck is private
+              (§3-2-2) and its cards are masked, so nothing here can name one.
+            */}
+            <div className="reveal-bar">
+              <span className="zone-label" title="Straight to the trash, face up (§3-6-3)">
+                Trash top
+              </span>
+              {TOP_COUNTS.map((n) => (
+                <button
+                  key={n}
+                  type="button"
+                  className="btn btn-sm"
+                  title={`Send the top ${n} card${n === 1 ? '' : 's'} of your deck to the trash, face up`}
+                  onClick={() => dispatch(act.deckTop(seat, n, 'trash'))}
+                >
+                  {n}
+                </button>
+              ))}
+              {/* Keeps the stops under the reveal row's, which has one more button. */}
+              <span className="spacer" />
+              <span className="reveal-fill" aria-hidden="true" />
+            </div>
+
+            <div className="reveal-bar">
+              <span
+                className="zone-label"
+                title="<Recovery> — face down on TOP of your security stack (§16-6)"
+              >
+                Recovery
+              </span>
+              {TOP_COUNTS.map((n) => (
+                <button
+                  key={n}
+                  type="button"
+                  className="btn btn-sm"
+                  /*
+                    Never says which card. Deck (§3-2-2) and security (§3-7-2)
+                    are both private, and naming the card in flight would tell
+                    the table exactly what the next security check reveals. The
+                    reducer's log takes the same care; the screen must not undo
+                    it.
+                  */
+                  title={`<Recovery> ${n} — the top ${n} card${n === 1 ? '' : 's'} of your deck ` +
+                    'face down onto the top of your security stack (§16-6)'}
+                  onClick={() => dispatch(act.deckTop(seat, n, 'security'))}
+                >
+                  {n}
+                </button>
+              ))}
+              <span className="spacer" />
+              <span className="reveal-fill" aria-hidden="true" />
+            </div>
+
+            {/*
               The rows are a way of laying the mat out, not a rule, so turning
               them off is a view preference and nothing else changes.
             */}
@@ -1764,6 +1918,21 @@ export function Board({ view, seat, index, dispatch, onUndo, onExit, refused }: 
                 {rows ? 'Two rows' : 'One row'}
               </button>
               <span className="spacer" />
+              {/*
+                §4-21. Effects that play a token had nothing to play: the
+                reducer's `playToken` has always been there and no control ever
+                reached it. It is a picker rather than a text box because a
+                token's name is printed on nothing you are holding — see
+                `TokenPicker`.
+              */}
+              <button
+                type="button"
+                className="btn btn-sm token-btn"
+                title="Put a token into your battle area (§4-21)"
+                onClick={() => setTokenPick(true)}
+              >
+                Token…
+              </button>
               {/*
                 The controls were onboarding text: three permanent lines of it
                 in the middle of the rail, read once and then read never again.
@@ -1866,6 +2035,13 @@ export function Board({ view, seat, index, dispatch, onUndo, onExit, refused }: 
           owner={browsing}
           name={browsing === seat ? 'Your trash' : `${nameOf(browsing)}'s trash`}
           onClose={() => setBrowsing(null)}
+        />
+      )}
+
+      {tokenPick && (
+        <TokenPicker
+          onPick={(name) => dispatch(act.playToken(seat, name))}
+          onClose={() => setTokenPick(false)}
         />
       )}
 

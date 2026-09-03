@@ -30,6 +30,25 @@ export function Art({ cardId, index, alt }: { cardId: string; index: CardIndex; 
 }
 
 /**
+ * A token's face, drawn rather than fetched.
+ *
+ * §4-21: a token is a non-game card with no card number, so there is nothing
+ * in the card pool to look one up by and no art belonging to it. Borrowing a
+ * real card's image would put the picture of a game card on the one thing that
+ * is deliberately not one — and a player glancing at the field would count it
+ * as a card. So it gets a face of its own: the name, and the word "token".
+ */
+export function TokenFace({ name }: { name: string }) {
+  return (
+    <span className="token-face">
+      <span className="token-kind">Token</span>
+      <span className="token-name">{name}</span>
+      <span className="token-rule">§4-21</span>
+    </span>
+  )
+}
+
+/**
  * How a declared attack paints this card: the attacker, its target, or one of
  * the legal targets while the player is still choosing.
  */
@@ -69,9 +88,18 @@ export function BoardCard(
   const cardId = card.cardId ?? ''
   const hidden = card.faceDown || !known
 
+  const token = card.token === true
+
   const data: DragData = { iid: card.iid, cardId, owner, zone }
   const drag = useDraggable({ id: `drag:${card.iid}`, data, disabled: !draggable || !known })
-  const drop = useDroppable({ id: `card:${card.iid}`, disabled: !droppable || !known })
+  /*
+    §4-21-3 and §4-21-4: a token cannot be stacked with and cannot be linked to,
+    so nothing may be dropped onto one. The reducer refuses all three verbs
+    already; switching the drop target off means the board never lights a token
+    up as though it would accept the card, which is the part a refusal cannot
+    take back.
+  */
+  const drop = useDroppable({ id: `card:${card.iid}`, disabled: !droppable || !known || token })
 
   const setRef = (node: HTMLElement | null) => {
     drag.setNodeRef(node)
@@ -81,6 +109,7 @@ export function BoardCard(
   const cls = [
     'bcard',
     hidden ? 'down' : '',
+    token ? 'token' : '',
     card.stack.length > 0 ? 'stacked' : '',
     card.suspended ? 'suspended' : '',
     drag.isDragging ? 'dragging' : '',
@@ -149,7 +178,7 @@ export function BoardCard(
       data-iid={card.iid}
       {...drag.listeners}
       {...drag.attributes}
-      title={known ? cardId : undefined}
+      title={known ? (token ? `${cardId} — token (§4-21)` : cardId) : undefined}
       /*
         Three gestures and no hidden fourth: a single click reads the card into
         the docked panel and never changes the board, a double click is the
@@ -190,7 +219,12 @@ export function BoardCard(
         `${nameOf(sourceId)} — digivolution source ${i + 1} of ${card.stack.length}, bottom first`,
       ))}
 
-      {!hidden && <Art cardId={cardId} index={ui.index} />}
+      {/*
+        A token's `cardId` is the name the effect gave it, not a card number, so
+        `Art` would have nothing to fetch and would fall back to printing the
+        raw id. It gets its own face instead — see `TokenFace`.
+      */}
+      {!hidden && (token ? <TokenFace name={cardId} /> : <Art cardId={cardId} index={ui.index} />)}
 
       {card.stack.length > 0 && (
         <div

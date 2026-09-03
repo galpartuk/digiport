@@ -3425,3 +3425,224 @@ a.brand:hover em { color: #58d6f7; }
 .preset .btn { white-space: nowrap; }
 
 .home-empty-actions { display: flex; flex-wrap: wrap; gap: 9px; margin-bottom: 10px; }
+
+/* ==========================================================================
+   Game board — deck-top shortcuts, tokens, Restart, and the play picker
+
+   Appended, never edits above. Four additions, none of which needed an
+   existing rule changed: the deck-top rows reuse `.reveal-bar` unaltered, the
+   token picker borrows the pile browser's scrim, and the picker's deck cards
+   borrow the deck builder's own `.bar-row` / `.color-bar` treatment so a curve
+   looks the same wherever it is drawn.
+   ========================================================================== */
+
+/* ------------------------------------------------------------ a token face */
+
+/*
+  §4-21: a token is a non-game card with no card number, so there is no art in
+  the pool that belongs to it and none may be borrowed — a real card's picture
+  on a token would read as a card, which is the one thing it is not. It gets a
+  drawn face instead: a plate the same shape as a card, in a colour no printed
+  card uses, carrying the name and the word.
+*/
+.token-face {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  padding: 4px;
+  border-radius: 5px;
+  text-align: center;
+  background:
+    radial-gradient(circle at 50% 18%, rgb(198 143 255 / 0.30), transparent 66%),
+    repeating-linear-gradient(-45deg, #241a3a 0 7px, #1e1631 7px 14px);
+  box-shadow: inset 0 0 0 1px rgb(198 143 255 / 0.45);
+}
+
+.token-kind {
+  font-size: 7.5px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: rgb(198 143 255 / 0.85);
+}
+
+.token-name {
+  font-size: 10px;
+  line-height: 1.15;
+  font-weight: 600;
+  color: var(--ink);
+  overflow-wrap: anywhere;
+}
+
+.token-rule {
+  font-size: 7.5px;
+  letter-spacing: 0.08em;
+  color: var(--ink-faint);
+}
+
+/* A token is drawn, not photographed, so it keeps its own edge rather than
+   the flat plate every other card sits on. */
+.bcard.token { background: #1e1631; }
+
+/* ---------------------------------------------------------- the token picker */
+
+.reveal-bar .btn.token-btn { flex: 0 0 auto; padding: 3px 9px; }
+
+.browser.tokenpick { width: min(720px, 92vw); }
+
+.tp-note {
+  margin: 0;
+  padding: 9px 14px 0;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--ink-faint);
+}
+
+/*
+  Eighteen names and no art to sort them by, so they are laid out as a plain
+  grid of faces at the size a card in the hand is read at.
+*/
+.tp-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(104px, 1fr));
+  gap: 9px;
+  padding: 12px 14px;
+  overflow-y: auto;
+}
+
+.tp-token {
+  position: relative;
+  aspect-ratio: 430 / 601;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  background: #1e1631;
+  cursor: pointer;
+  box-shadow: 0 2px 8px rgb(0 0 0 / 0.5);
+  transition: transform 0.12s ease, box-shadow 0.12s ease;
+}
+
+.tp-token:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 0 0 2px var(--accent), 0 10px 22px rgb(0 0 0 / 0.65);
+}
+
+.tp-token .token-name { font-size: 12px; }
+
+.tp-token .token-kind, .tp-token .token-rule { font-size: 8.5px; }
+
+.tp-foot {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 14px;
+  border-top: 1px solid var(--line);
+}
+
+.tp-foot .log-input { flex: 1; min-width: 0; }
+
+/* --------------------------------------------------------------- Restart */
+
+/*
+  `Play` owns the game session and `Board` owns the rail, so Restart cannot sit
+  next to Exit without handing the board a prop it has no use for. It rides the
+  bottom-left corner instead — the one corner of the mat nothing is played
+  onto — muted until it is pointed at, and under the pile browser's scrim (55)
+  so an open browser covers it like everything else.
+*/
+.play-restart {
+  position: fixed;
+  left: 8px;
+  bottom: 8px;
+  z-index: 40;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 6px;
+  border-radius: 8px;
+  background: rgb(10 16 26 / 0.86);
+  border: 1px solid var(--line);
+  opacity: 0.55;
+  transition: opacity 0.14s ease;
+}
+
+.play-restart:hover, .play-restart:focus-within { opacity: 1; }
+
+.play-restart .zone-label { margin: 0 2px; }
+
+/* ------------------------------------------------- the play picker, with shape */
+
+/*
+  A wider gate, because the choices are no longer one line each. The heading
+  stays centred; a deck's own card is read top-to-bottom and left-aligned.
+*/
+.play-gate.picking {
+  max-width: 720px;
+  width: min(720px, 100%);
+  max-height: 100%;
+  overflow-y: auto;
+  padding: 16px 20px;
+}
+
+.play-gate-choices .btn.deck-choice {
+  display: block;
+  text-align: left;
+  padding: 10px 12px;
+}
+
+.deck-choice-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  font-size: 13.5px;
+  font-weight: 600;
+}
+
+/* The curve, the type spread and the colours, at a size that fits under a name. */
+.deck-shape { margin-top: 8px; }
+
+.deck-shape .group { margin-bottom: 0; }
+
+.deck-shape .group > h3 { margin-bottom: 5px; }
+
+.deck-shape .bar-row { margin-bottom: 2px; }
+
+/* Card-type names are words, not one digit, so the label column has to give. */
+.deck-shape .bar-row { grid-template-columns: 52px 1fr 22px; }
+
+.deck-shape .color-bar { margin-top: 9px; }
+
+/* ------------------------------------------- the context menu, measured right */
+
+/*
+  `ContextMenu` keeps itself on screen by estimating its own height from the row
+  count — 25px an item, 22px a title, 9px a rule — rather than measuring it and
+  re-rendering. The estimate was never what this sheet actually produced: a
+  12.5px label at `normal` line-height makes a 28.1px row, so every menu came
+  out about a tenth taller than the clamp allowed for and a long one ran off the
+  bottom of the window. The deck's menu is now the longest on the board and made
+  that visible.
+
+  Pinning the line-heights is the honest fix: it makes the CSS agree with the
+  arithmetic the component was written against, instead of teaching the
+  component a second set of numbers it would have to be kept in step with.
+*/
+.ctx-menu button { line-height: 15px; }
+
+.ctx-menu .ctx-title { padding: 3px 9px 4px; line-height: 15px; }
+
+/* --------------------------------------------- the three deck-top rows, aligned */
+
+/*
+  Reveal top, Trash top and Recovery are one control group pointed at three
+  destinations, so their stops have to land in the same columns: a label wide
+  enough for the longest of the three names, and a filler standing in for the
+  reveal row's extra "Hand" button so five stops divide the same width six do.
+*/
+.reveal-bar > .zone-label { flex: 0 0 auto; min-width: 62px; }
+
+.reveal-bar .reveal-fill { flex: 1; }
