@@ -31,6 +31,17 @@ export type CardInstance = {
   stack: string[]
   /** Plug-ins / link cards attached to this card, top first. */
   attached: CardInstance[]
+  /**
+   * A token (4-21) — a non-game card an effect puts on the field. `cardId`
+   * holds whatever the effect calls it rather than a real card number, so
+   * nothing looks it up in the card pool.
+   *
+   * Tokens are not cards: they cannot be stacked with (4-21-3), cannot be
+   * linked (4-21-4), and when one leaves the field it is REMOVED FROM THE GAME
+   * rather than placed in another area (4-21-5). Trashing a token would leave a
+   * card in the trash that was never in the deck.
+   */
+  token?: true
 }
 
 export type DeckList = {
@@ -160,6 +171,17 @@ export type Action =
   | { t: 'revealTop'; by: PlayerId; n: number }
   | { t: 'revealHand'; by: PlayerId }
   | { t: 'flip'; by: PlayerId; iid: Iid }
+  /**
+   * Put a token on the field (4-21). `name` is what the effect calls it —
+   * "Sistermon Ciel", "Digimon token" — because a token has no card number.
+   */
+  | { t: 'playToken'; by: PlayerId; name: string }
+  /**
+   * Deletion (4-15), which is NOT the same event as trashing (4-16-3) even
+   * though both end with the card in the trash. `[On Deletion]` keys off this
+   * one, so the log has to be able to say which happened.
+   */
+  | { t: 'deleteCard'; by: PlayerId; iid: Iid }
   | { t: 'concede'; by: PlayerId }
   | { t: 'chat'; by: PlayerId; text: string }
   | { t: 'undoRequest'; by: PlayerId }

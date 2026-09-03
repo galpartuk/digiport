@@ -796,6 +796,79 @@ describe('security and reveal', () => {
   })
 })
 
+describe('tokens', () => {
+  it('puts a named token into the battle area', () => {
+    const s = apply(game, act.playToken(0, 'Sistermon Ciel'))
+    expect(s.players[0].battle).toHaveLength(1)
+    expect(s.players[0].battle[0].cardId).toBe('Sistermon Ciel')
+    expect(s.players[0].battle[0].token).toBe(true)
+    assertIntegrity(s)
+  })
+
+  // 4-21-5: a token leaving the field is removed from the game, not trashed.
+  it('leaves the game rather than the trash', () => {
+    let s = apply(game, act.playToken(0, 'Digimon token'))
+    const iid = s.players[0].battle[0].iid
+    const before = countCards(game)
+    s = apply(s, act.move(0, iid, 'trash'))
+    expect(s.players[0].battle).toHaveLength(0)
+    expect(s.players[0].trash).toHaveLength(0)
+    expect(countCards(s)).toBe(before)      // back to the real card count
+    assertIntegrity(s)
+  })
+
+  it('says so in the log when a token is deleted', () => {
+    let s = apply(game, act.playToken(0, 'Digimon token'))
+    s = apply(s, act.deleteCard(0, s.players[0].battle[0].iid))
+    expect(s.log.at(-1)!.text).toMatch(/deleted and leaves the game/)
+    expect(s.players[0].trash).toHaveLength(0)
+  })
+
+  // 4-21-3 and 4-21-4.
+  it('cannot be stacked with or linked', () => {
+    let s = apply(game, act.playToken(0, 'Digimon token'))
+    const tok = s.players[0].battle[0].iid
+    const inHand = s.players[0].hand[0].iid
+    expect(() => apply(s, act.digivolve(0, tok, inHand))).toThrow(/token cannot be stacked/)
+    expect(() => apply(s, act.placeUnder(0, [inHand], tok))).toThrow(/token cannot be stacked/)
+    expect(() => apply(s, act.attach(0, inHand, tok))).toThrow(/token cannot be linked/)
+
+    s = playToBattle(s, 0)
+    const real = s.players[0].battle.find((c) => !c.token)!.iid
+    expect(() => apply(s, act.placeUnder(0, [tok], real))).toThrow(/token cannot be stacked/)
+  })
+})
+
+describe('deletion is not trashing', () => {
+  // 4-15 and 4-16-3 are different events even though both end in the trash;
+  // [On Deletion] keys off one and not the other, so the log must distinguish.
+  it('trashes the card but logs it as a deletion', () => {
+    const s = playToBattle(game, 0)
+    const iid = s.players[0].battle[0].iid
+    const dead = apply(s, act.deleteCard(0, iid))
+    expect(dead.players[0].battle).toHaveLength(0)
+    expect(dead.players[0].trash.map((c) => c.iid)).toContain(iid)
+    expect(dead.log.at(-1)!.text).toMatch(/is deleted/)
+    expect(dead.log.at(-1)!.text).not.toMatch(/moves/)
+    expect(countCards(dead)).toBe(countCards(s))
+  })
+
+  it('takes the sources down with it, exactly as a move to the trash does', () => {
+    let s = playToBattle(game, 0)
+    const iid = s.players[0].battle[0].iid
+    s = apply(s, act.digivolve(0, iid, s.players[0].hand[0].iid))
+    const dead = apply(s, act.deleteCard(0, iid))
+    expect(dead.players[0].trash).toHaveLength(2)
+    expect(countCards(dead)).toBe(countCards(s))
+    assertIntegrity(dead)
+  })
+
+  it('refuses a card that is not in play', () => {
+    expect(() => apply(game, act.deleteCard(0, game.players[0].hand[0].iid)))
+      .toThrow(/only a card in play/)
+  })
+})
+
 describe('shuffles and conceding', () => {
   it('reorders the deck and advances the rng state', () => {
     const before = game.players[0].deck.map((c) => c.iid)
@@ -1032,6 +1105,8 @@ describe('every action type is exercised', () => {
     run(act.flip(0, s.players[0].security[0].iid))
     run(act.nextPhase(0))          // main is the last phase, so this passes the turn
     run(act.endTurn(1))
+    run(act.playToken(1, 'Digimon token'))
+    run(act.deleteCard(1, s.players[1].battle[0].iid))
     run(act.undoRequest(1))
     run(act.undoAccept(1))
     run(act.undoDecline(1))
@@ -1043,7 +1118,8 @@ describe('every action type is exercised', () => {
       'setDp', 'setCounters',
       'setMemory', 'payMemory', 'nextPhase', 'endTurn', 'attack', 'endAttack',
       'securityCheck', 'revealTop',
-      'revealHand', 'flip', 'concede', 'chat', 'undoRequest', 'undoAccept', 'undoDecline',
+      'revealHand', 'flip', 'playToken', 'deleteCard', 'concede', 'chat',
+      'undoRequest', 'undoAccept', 'undoDecline',
     ]
     expect([...every].filter((t) => !seen.has(t))).toEqual([])
     expect(s.winner).toBe(0)

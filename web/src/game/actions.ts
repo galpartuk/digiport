@@ -62,6 +62,8 @@ export const act = {
   revealHand: (by: PlayerId): Action => ({ t: 'revealHand', by }),
   flip: (by: PlayerId, iid: Iid): Action => ({ t: 'flip', by, iid }),
 
+  playToken: (by: PlayerId, name: string): Action => ({ t: 'playToken', by, name }),
+  deleteCard: (by: PlayerId, iid: Iid): Action => ({ t: 'deleteCard', by, iid }),
   concede: (by: PlayerId): Action => ({ t: 'concede', by }),
   chat: (by: PlayerId, text: string): Action => ({ t: 'chat', by, text }),
 

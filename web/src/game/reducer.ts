@@ -227,6 +227,19 @@ function relocate(
   const card = spot.instance
   lift(state, spot)
 
+  // 4-21-5: "When a token leaves the field, it is removed from the game instead
+  // of being placed in another area." Trashing one would put a card in the
+  // trash that was never in the deck, and every «cards in your trash» effect
+  // would then count it.
+  if (card.token && spot.zone !== to) {
+    for (const plug of card.attached) {
+      plug.faceDown = false
+      state.players[plug.owner].trash.unshift(plug)
+    }
+    card.attached = []
+    return card
+  }
+
   // A card being unplugged from a host is not itself leaving the field, so it
   // keeps nothing to shed.
   const leavingField =
@@ -421,6 +434,10 @@ export function apply(state: GameState, action: Action): GameState {
       if (!['hand', 'reveal', 'battle'].includes(source.zone)) {
         throw new IllegalAction(action, 'digivolve from hand, the reveal area, or the field')
       }
+      // 4-21-3: cards can't be stacked with tokens, in either direction.
+      if (target.instance.token || source.instance.token) {
+        throw new IllegalAction(action, 'a token cannot be stacked with')
+      }
 
       const under = target.instance
       const top = source.instance
@@ -475,6 +492,10 @@ export function apply(state: GameState, action: Action): GameState {
       if (spot.instance.iid === target.instance.iid) {
         throw new IllegalAction(action, 'a card cannot attach to itself')
       }
+      // 4-21-4: tokens can't be linked, and can't be linked to.
+      if (spot.instance.token || target.instance.token) {
+        throw new IllegalAction(action, 'a token cannot be linked')
+      }
       lift(next, spot)
       spot.instance.faceDown = false
       target.instance.attached.unshift(spot.instance)
@@ -497,6 +518,10 @@ export function apply(state: GameState, action: Action): GameState {
         const source = need(next, action, iid)
         if (source.zone === 'deck' || source.zone === 'eggDeck' || source.zone === 'security') {
           throw new IllegalAction(action, 'that card is in a hidden pile')
+        }
+        // 4-21-3 again: a token can neither be buried nor buried under.
+        if (source.instance.token || under.token) {
+          throw new IllegalAction(action, 'a token cannot be stacked with')
         }
 
         const moved = source.instance
@@ -688,6 +713,32 @@ export function apply(state: GameState, action: Action): GameState {
       spot.instance.faceDown = !spot.instance.faceDown
       log(next, action.by, `${nameOf(next, action.by)} turns a card ` +
         `${spot.instance.faceDown ? 'face down' : 'face up'}`)
+      break
+    }
+
+    case 'playToken': {
+      const name = action.name.trim()
+      if (!name) throw new IllegalAction(action, 'a token needs a name')
+      const tokenCard = newInstance(next, name.slice(0, 60), action.by, false)
+      tokenCard.token = true
+      next.players[action.by].battle.push(tokenCard)
+      log(next, action.by, `${nameOf(next, action.by)} plays a ${name} token`)
+      break
+    }
+
+    case 'deleteCard': {
+      const spot = need(next, action, action.iid)
+      if (spot.zone !== 'battle' && spot.zone !== 'breeding') {
+        throw new IllegalAction(action, 'only a card in play can be deleted')
+      }
+      // 4-15-1: deletion trashes the card. It is a different EVENT from
+      // trashing (4-16-3) — [On Deletion] triggers on this and not on a plain
+      // trash — so it gets its own action and its own line in the log.
+      const gone = spot.instance
+      const wasToken = gone.token
+      relocate(next, spot, 'trash')
+      log(next, action.by, `${gone.cardId} is deleted` +
+        (wasToken ? ' and leaves the game' : ''))
       break
     }
 
