@@ -786,12 +786,14 @@ a.btn {
         fan under them, so a half costs ~1.4 card-heights instead of ~2.9;
       · the memory gauge and its cost strip share one line.
 
-    What is traded away: the battle areas no longer reserve room for a full
-    second row, and scroll internally when the field gets crowded (they always
-    could — see .zone.battle). Cards on the mat stay readable; a crowded field
-    scrolls. That is the right way round.
+    This is the *base* size — what a card is worth on a mat that is not
+    crowded, and what the hand, the piles and the raising area are always drawn
+    at. The battle areas start here and then fit themselves to their own box
+    (see .zone.battle and board/fit.ts): they never scroll and never clip,
+    because a card you cannot see is a card you forget you have.
   */
-  --bcard: clamp(64px, calc((100vh - 200px) / 4.2 * 0.715), 112px);
+  --bcard-base: clamp(64px, calc((100vh - 200px) / 4.2 * 0.715), 112px);
+  --bcard: var(--bcard-base);
   --bcard-h: calc(var(--bcard) * 601 / 430);
   /*
     The rail's piles are not play cards — nothing is read off them, they are
@@ -820,8 +822,12 @@ a.btn {
   min-width: 0;
   /* A mat that has run out of room clips rather than pushing itself off-screen. */
   overflow: hidden;
-  padding: 5px 12px 7px;
-  gap: 3px;
+  /*
+    Every pixel of chrome here is a pixel the battle areas do not get, and the
+    field is now the thing that has to fit rather than the thing that scrolls.
+  */
+  padding: 4px 10px 5px;
+  gap: 2px;
 }
 
 /* A faint printed grid under everything, so empty mat reads as mat. */
@@ -848,7 +854,7 @@ a.btn {
   gap: 8px;
   min-height: 0;
   min-width: 0;
-  padding: 8px;
+  padding: 6px 8px;
   border-radius: 13px;
   border: 1px solid rgb(120 165 210 / 0.10);
   background: linear-gradient(180deg, rgb(255 255 255 / 0.022), rgb(255 255 255 / 0));
@@ -1014,7 +1020,12 @@ a.btn {
 .zone.battle {
   grid-area: battle;
   min-height: 0;
-  overflow-y: auto;
+  /*
+    Never a scroll container. `min-height: 0` is what makes that safe: it stops
+    the zone's own contents from being able to grow its grid row, so the box is
+    a fixed target the fit can measure once and lay out into.
+  */
+  overflow: visible;
   /* Mirrored, the cards still gather at the edge nearest the memory gauge. */
   display: flex;
   flex-direction: column;
@@ -1588,7 +1599,7 @@ a.btn {
   align-items: center;
   gap: 10px;
   align-self: center;
-  padding: 2px 12px;
+  padding: 1px 12px;
   border-radius: 999px;
   border: 1px solid var(--line-soft);
   background: rgb(13 19 30 / 0.78);
@@ -2333,9 +2344,13 @@ a.btn {
 /*
   The back row keeps a landing strip, not a whole card of reserved space: rows
   are a layout, and an empty one should not be charged to every card on the mat.
-  Tamers and Options put into it grow it, and the battle area scrolls.
+  An empty one is thinner still — 14px is enough to read as a place a card can
+  go, and the ~30px it hands back is a third of what a crowded front row needs
+  to stay at full size.
 */
 .brow.back .zone-cards { min-height: max(18px, calc(var(--bcard-h) * 0.3)); }
+
+.brow.back .zone-cards:empty { min-height: 14px; }
 
 .brow-tag {
   position: absolute;
@@ -2357,13 +2372,54 @@ a.btn {
 
 .half.foe .zone.battle { padding-top: 5px; padding-bottom: 14px; }
 
+/* ------------------------------------------------------ fitting the field
+
+   The battle area must never have to be scrolled — see board/fit.ts, which
+   measures the zone and writes these three properties onto it. Everything here
+   is only how they are spent:
+
+     --fit      card scale, 1 on an uncrowded board
+     --fit-gap  the space between cards
+     --fit-lap  how much of a card the next one covers
+
+   The order matters. Closing the gap and then overlapping buys a whole extra
+   card in a row at *full size*, and the part an overlap hides is the right edge
+   of the art — the name, the effective-DP plate and the spread of digivolution
+   sources all live on the left and stay readable. Only when that runs out does
+   the card size step down, and a three-Digimon board never reaches even the
+   first step.                                                                */
+
+.zone.battle {
+  --bcard: calc(var(--bcard-base) * var(--fit, 1));
+  --bcard-h: calc(var(--bcard) * 601 / 430);
+}
+
+.zone.battle .zone-cards {
+  column-gap: var(--fit-gap, 8px);
+  /* Matches the `Math.max(4, gap)` the fit predicts a wrapped row with. */
+  row-gap: max(4px, var(--fit-gap, 8px));
+}
+
 /*
-  The field is the one place on the mat that scrolls: a crowded battle area is
-  worth a scrollbar, and shrinking every card on both halves to guarantee a
-  second row that is usually empty is not. Thin, so it costs the field 8px and
-  not a card.
+  Negative margin on the right, not the left: with flex-wrap, a negative
+  left margin drags the first card of every wrapped row out past the edge of
+  the zone, while a negative right margin simply shortens each line. Later
+  siblings paint on top, so a row overlaps the way a hand of cards does.
 */
-.zone.battle { scrollbar-width: thin; scrollbar-color: rgb(120 165 210 / 0.35) transparent; }
+.zone.battle .zone-cards > .bcard {
+  margin-right: calc(var(--bcard) * var(--fit-lap, 0) * -1);
+}
+
+/* One `var(--bcard-base)` wide, so the fit can read the base size in pixels. */
+.fit-probe {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: var(--bcard-base);
+  height: 0;
+  visibility: hidden;
+  pointer-events: none;
+}
 
 .zone.battle > .battle-rows,
 .zone.battle > .zone-cards { flex: 0 0 auto; }
@@ -2549,6 +2605,223 @@ a.btn {
   .peek { display: none; }
 }
 
+
+/* ==========================================================================
+   Game board — the special digivolution rules
+
+   DigiXros (§7-2), Assembly (§7-3), DNA Digivolve / Jogress (§8-2), Burst
+   (§8-3) and Link (§4-9). A card that carries one wears a badge; the badge
+   opens a picker showing the cards you could use.
+   ========================================================================== */
+
+/* ------------------------------------------------------ the badge on a card */
+
+/*
+  Bottom-left, because a hand is an overlapping fan and the left edge of every
+  card is the part that stays visible. It sits where the effective-DP plate
+  goes, which is fine: DP is only drawn on a card in play, and these badges are
+  only drawn on a card that is not.
+*/
+.rule-row {
+  position: absolute;
+  left: 2px;
+  bottom: 2px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px;
+  max-width: calc(100% - 4px);
+}
+
+.rule-chip {
+  display: block;
+  padding: 0 4px;
+  border-radius: 3px;
+  background: rgb(6 12 20 / 0.9);
+  border: 1px solid var(--accent);
+  color: var(--accent);
+  font-size: 8px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  line-height: 14px;
+  cursor: pointer;
+  white-space: nowrap;
+  box-shadow: 0 1px 4px rgb(0 0 0 / 0.7);
+}
+
+.rule-chip:hover {
+  background: var(--accent);
+  color: var(--accent-ink);
+}
+
+/* Link is plugged in sideways and is not a digivolution card, so it is not blue. */
+.rule-chip.rule-link { border-color: var(--c-purple); color: #c79bf0; }
+
+.rule-chip.rule-link:hover { background: var(--c-purple); color: #120820; }
+
+/* --------------------------------------------- the same buttons, in the reader */
+
+.peek-actions { display: flex; flex-wrap: wrap; gap: 4px; }
+
+.rule-btn {
+  border-color: var(--accent);
+  color: var(--accent);
+  font-weight: 700;
+  letter-spacing: 0.05em;
+}
+
+.rule-btn:hover { background: var(--accent); color: var(--accent-ink); }
+
+/* -------------------------------------------------------------- the picker */
+
+/*
+  Built on .browser, the trash browser's shell, because it is the same object:
+  a full-width sheet of cards you look through and pick from. What it adds is
+  the requirement it is picking against, and a footer that says out loud what
+  the confirm button is about to do.
+*/
+.rulepick { width: min(1000px, 94vw); }
+
+.browser-head .rp-kind {
+  color: var(--accent);
+  font-size: 10px;
+  letter-spacing: 0.11em;
+  text-transform: uppercase;
+}
+
+.rp-req {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 6px 12px;
+  padding: 9px 14px;
+  border-bottom: 1px solid var(--line);
+  background: var(--panel-2);
+}
+
+.rp-raw {
+  font-size: 12px;
+  color: var(--ink-dim);
+  line-height: 1.45;
+}
+
+.rp-chips { display: flex; flex-wrap: wrap; gap: 4px; }
+
+.rp-chip {
+  font-style: normal;
+  font-size: 10.5px;
+  padding: 1px 7px;
+  border-radius: 999px;
+  border: 1px solid rgb(53 200 240 / 0.35);
+  color: var(--accent);
+  white-space: nowrap;
+}
+
+.rp-body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 12px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.rp-zone { display: flex; flex-direction: column; gap: 6px; }
+
+.rp-grid { display: flex; flex-wrap: wrap; gap: 8px; }
+
+/* The picker lives outside .board, so it cannot inherit --bcard. */
+.rp-card {
+  position: relative;
+  width: 86px;
+  height: calc(86px * 601 / 430);
+  padding: 0;
+  border: 0;
+  border-radius: 5px;
+  background: #121a27;
+  cursor: pointer;
+  box-shadow: 0 2px 8px rgb(0 0 0 / 0.6);
+  transition: transform 0.12s ease, box-shadow 0.12s ease;
+}
+
+.rp-card img { width: 100%; height: 100%; object-fit: cover; border-radius: 5px; display: block; }
+
+.rp-card:hover { transform: translateY(-3px); }
+
+.rp-card.on {
+  box-shadow: 0 0 0 3px var(--accent), 0 6px 18px rgb(0 0 0 / 0.7);
+}
+
+/* Which one is which: DNA (§8-2) puts the first pick on the bottom of the stack. */
+.rp-tick {
+  position: absolute;
+  top: -6px;
+  right: -6px;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  border-radius: 9px;
+  background: var(--accent);
+  color: var(--accent-ink);
+  font-size: 9.5px;
+  font-weight: 700;
+  line-height: 18px;
+  text-align: center;
+}
+
+/*
+  A card the requirement does not name, offered anyway. The mark is a question
+  and not a warning: the parse reads printed prose and will be wrong sometimes,
+  and refusing a legal play is far worse than offering an illegal one.
+*/
+.rp-loose {
+  position: absolute;
+  left: 3px;
+  top: 3px;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: rgb(6 12 20 / 0.85);
+  border: 1px solid rgb(244 185 66 / 0.6);
+  color: var(--warn);
+  font-size: 9px;
+  font-weight: 700;
+  line-height: 13px;
+  text-align: center;
+}
+
+.rp-foot {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 9px;
+  padding: 9px 14px;
+  border-top: 1px solid var(--line);
+  background: var(--panel-2);
+}
+
+.rp-foot .spacer { flex: 1; }
+
+.rp-foot .btn.on { border-color: var(--accent); color: var(--accent); }
+
+.rp-plan {
+  flex: 1 1 240px;
+  min-width: 0;
+  font-size: 11.5px;
+  line-height: 1.45;
+  color: var(--ink-faint);
+}
+
+/* Offered, never deducted — the same promise the rail's cost row makes. */
+.rp-cost {
+  font-size: 12px;
+  color: var(--ink-dim);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.rp-cost b { color: var(--warn); font-size: 14px; }
+
+.rulepick .browser-empty { padding: 24px; }
 
 /* ------------------------------------------------------- folded multi-select
 

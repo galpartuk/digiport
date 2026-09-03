@@ -2,6 +2,7 @@ import { createContext, useContext } from 'react'
 import type { CardIndex } from '../cards'
 import type { Action, PlayerId, Zone } from '../game/types'
 import type { ViewCard } from '../game/view'
+import type { RuleKind } from './rules'
 
 /**
  * What travels with a dragged card. Only cards the viewer can actually see get
@@ -35,8 +36,17 @@ export type BoardUi = {
    * the pointer crossed the mat, which is exactly what a board reader must not
    * do.
    */
-  peekCard: (cardId: string) => void
+  peekCard: (cardId: string, from?: MenuTarget) => void
   openMenu: (target: MenuTarget, x: number, y: number) => void
+  /**
+   * Open the picker for one of the special digivolution rules — DigiXros
+   * (§7-2), Assembly (§7-3), DNA Digivolve (§8-2), Burst (§8-3), Link (§4-9).
+   *
+   * It takes the card's place on the board and not just its id, because every
+   * one of those rules ends in an action naming an instance: the card has to be
+   * moved, digivolved into, or plugged in, and a card id cannot be any of those.
+   */
+  openRule: (target: MenuTarget, kind: RuleKind) => void
 }
 
 export const UiCtx = createContext<BoardUi | null>(null)

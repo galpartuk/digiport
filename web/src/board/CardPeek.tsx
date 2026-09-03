@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, type ReactNode } from 'react'
 import { imageUrl, type Card, type Meta } from '../cards'
 
 /**
@@ -36,9 +36,19 @@ const COLOR_VAR: Record<string, string> = {
   White: 'var(--c-white)',
 }
 
-type Props = { card: Card | null; meta: Meta }
+type Props = {
+  card: Card | null
+  meta: Meta
+  /**
+   * Buttons for whatever this card can actually do from where it is sitting —
+   * DigiXros, Assembly, Jogress, Burst, Link. The reader takes them rendered
+   * rather than working them out, because doing anything needs the card's
+   * *instance*, which is board state and not a card record.
+   */
+  actions?: ReactNode
+}
 
-export function CardPeek({ card, meta }: Props) {
+export function CardPeek({ card, meta, actions }: Props) {
   const [attempt, setAttempt] = useState(0)
 
   // A new card starts its own image-fallback walk.
@@ -80,6 +90,8 @@ export function CardPeek({ card, meta }: Props) {
           {card.attribute && <span>{card.attribute}</span>}
         </div>
 
+        {actions ? <div className="peek-actions">{actions}</div> : null}
+
         <div className="peek-colors">
           {card.colors.map((c) => (
             <span key={c} className="peek-dot" style={{ background: COLOR_VAR[c] ?? 'var(--line)' }} title={c} />
@@ -119,6 +131,13 @@ export function CardPeek({ card, meta }: Props) {
         )}
         {card.digiXros && (
           <><div className="peek-label">DigiXros</div><Effect text={card.digiXros} /></>
+        )}
+        {/* §7-3 and §8-3. Both fields are in the payload; neither was ever shown. */}
+        {card.assembly && (
+          <><div className="peek-label">Assembly</div><Effect text={card.assembly} /></>
+        )}
+        {card.burstDigivolve && (
+          <><div className="peek-label">Burst Digivolve</div><Effect text={card.burstDigivolve} /></>
         )}
         {card.linkRequirement && (
           <>

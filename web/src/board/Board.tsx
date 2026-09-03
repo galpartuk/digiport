@@ -16,6 +16,9 @@ import { Art, BoardCard, type CardMark } from './BoardCard'
 import { OPPONENT_DESTINATIONS, UiCtx, useUi, type BoardUi, type DragData, type MenuTarget } from './boardCtx'
 import { CardPeek } from './CardPeek'
 import { ContextMenu, type MenuItem } from './ContextMenu'
+import { useBattleFit } from './fit'
+import { RulePicker } from './RulePicker'
+import { RULE_BADGE, offeredIn, ruleHint, ruleOn, rulesOn, type RuleKind, type RuleSpec } from './rules'
 
 /** Where the front-row / back-row preference is remembered. */
 const ROWS_KEY = 'digiport.board.rows'
@@ -66,12 +69,19 @@ const THEIRS = (zone: string) => `off:${zone}`
 // --------------------------------------------------------------- small parts
 
 function DropField(
-  { id, disabled, className, children }:
-  { id: string; disabled?: boolean; className: string; children: ReactNode },
+  { id, disabled, className, children, innerRef }:
+  {
+    id: string; disabled?: boolean; className: string; children: ReactNode
+    /** A second ref onto the same node — the battle area is measured as well as dropped on. */
+    innerRef?: (node: HTMLElement | null) => void
+  },
 ) {
   const { setNodeRef, isOver } = useDroppable({ id, disabled })
   return (
-    <div ref={setNodeRef} className={!disabled && isOver ? `${className} over` : className}>
+    <div
+      ref={(node) => { setNodeRef(node); innerRef?.(node) }}
+      className={!disabled && isOver ? `${className} over` : className}
+    >
       {children}
     </div>
   )
@@ -427,6 +437,19 @@ function Seat(p: SeatProps) {
     : []
   const front = p.rows ? p.player.battle.filter((c) => !back.includes(c)) : p.player.battle
 
+  /*
+    The field never scrolls (see `fit.ts`). The zone's box is fixed by the mat,
+    so what gives instead is the layout inside it: the gap closes, then the
+    cards overlap, and only then do they shrink. A stack is taller than a flat
+    card because its sources spread downwards (§4-7-4), so the depths go into
+    the measurement, not just the count.
+  */
+  const fitRef = useBattleFit({
+    rows: p.rows,
+    front: front.map((c) => c.stack.length),
+    back: back.map((c) => c.stack.length),
+  })
+
   return (
     <section className={['half', mine ? 'me' : 'foe', p.active ? 'active' : ''].filter(Boolean).join(' ')}>
       <div className="mat-rail">
@@ -504,8 +527,17 @@ function Seat(p: SeatProps) {
         <DropField
           id={zoneId('battle')}
           disabled={!mine}
+          innerRef={fitRef}
           className={p.rows ? 'zone battle rows' : 'zone battle'}
         >
+          {/*
+            One `var(--bcard-base)` wide and nothing else. An unregistered
+            custom property keeps its token stream in the computed style, so
+            `--bcard-base` reads back as the whole `clamp(...)` string rather
+            than a length; a probe is how the fit learns the base card width in
+            pixels without the formula being written down twice.
+          */}
+          <i className="fit-probe" aria-hidden="true" />
           <span className="zone-tag">Battle area</span>
           {p.rows ? (
             <div className="battle-rows">
@@ -613,7 +645,9 @@ function menuFor(
  */
 type CostOffer = {
   name: string
-  kind: 'play' | 'digivolve'
+  kind: 'play' | 'digivolve' | 'rule'
+  /** What the offer is for, when a special rule worked it out. */
+  label?: string
   costs: Array<{ cost: number; note?: string }>
 }
 
@@ -682,6 +716,14 @@ export function Board({ view, seat, index, dispatch, onUndo, onExit, refused }: 
 
   /** The docked reader's subject. Sticky: leaving a card does not clear it. */
   const [peek, setPeek] = useState<Card | null>(null)
+  /**
+   * Where the reader's card was picked up from, when it was picked up off the
+   * board at all. A card id is enough to *read* a card and not nearly enough to
+   * *do* anything with it, and the rule buttons do things.
+   */
+  const [peekFrom, setPeekFrom] = useState<MenuTarget | null>(null)
+  /** The special-rule picker: which card, and which of its rules. */
+  const [rulePick, setRulePick] = useState<{ target: MenuTarget; spec: RuleSpec } | null>(null)
   const [menu, setMenu] = useState<{ target: MenuTarget; x: number; y: number } | null>(null)
   const [dragging, setDragging] = useState<DragData | null>(null)
   const [chat, setChat] = useState('')
@@ -722,9 +764,12 @@ export function Board({ view, seat, index, dispatch, onUndo, onExit, refused }: 
    * you look down at your hand.
    */
   const peekCard = useCallback(
-    (cardId: string) => {
+    (cardId: string, from?: MenuTarget) => {
       const card = index.byId.get(cardId)
-      if (card) setPeek(card)
+      if (card) {
+        setPeek(card)
+        setPeekFrom(from ?? null)
+      }
     },
     [index],
   )
@@ -733,9 +778,15 @@ export function Board({ view, seat, index, dispatch, onUndo, onExit, refused }: 
     setMenu({ target, x, y })
   }, [])
 
+  const openRule = useCallback((target: MenuTarget, kind: RuleKind) => {
+    const card = target.card.cardId ? index.byId.get(target.card.cardId) : undefined
+    const spec = ruleOn(card, kind)
+    if (spec) setRulePick({ target, spec })
+  }, [index])
+
   const ui = useMemo<BoardUi>(
-    () => ({ seat, index, dispatch, peekCard, openMenu }),
-    [seat, index, dispatch, peekCard, openMenu],
+    () => ({ seat, index, dispatch, peekCard, openMenu, openRule }),
+    [seat, index, dispatch, peekCard, openMenu, openRule],
   )
 
   // A click has to survive the drag sensor, so a press only becomes a drag
@@ -953,6 +1004,64 @@ export function Board({ view, seat, index, dispatch, onUndo, onExit, refused }: 
     return items
   }
 
+  // -------------------------------------------------- the special-rule buttons
+
+  /**
+   * Which of my own zones a card is in right now, or null if it has left them.
+   *
+   * The reader is sticky — it holds the last card you clicked while you think —
+   * so by the time you press one of its buttons the card may well have moved.
+   * Reading the zone back off the view rather than off what the reader was told
+   * is what keeps a DigiXros button from still being there after the DigiXros.
+   */
+  const myZoneOf = (iid: Iid): Zone | null => {
+    for (const zone of ['hand', 'battle', 'breeding', 'trash', 'reveal'] as Zone[]) {
+      if (me[zone].some((c) => c.iid === iid)) return zone
+    }
+    return null
+  }
+
+  /**
+   * Runs a rule the picker put together. Several actions, because the reducer
+   * has no single "DigiXros" verb and should not: a DigiXros is a play and a
+   * placement, and both are things a player can already do by hand. What the
+   * picker buys is that the placement is *one* `placeUnder` — one log line and
+   * one undo for a five-card Xros.
+   */
+  const runRule = (
+    actions: Action[],
+    cost: { name: string; costs: number[]; note: string },
+  ) => {
+    for (const action of actions) dispatch(action)
+    setRulePick(null)
+    setOffer(cost.costs.length === 0 ? null : {
+      name: cost.name,
+      kind: 'rule',
+      label: cost.note,
+      costs: cost.costs.map((c) => ({ cost: c })),
+    })
+  }
+
+  /** The rule buttons the docked reader grows for the card it is holding. */
+  const peekActions = (): ReactNode => {
+    if (!peek || !peekFrom || peekFrom.owner !== seat) return null
+    const zone = myZoneOf(peekFrom.card.iid)
+    if (!zone) return null
+    const specs = rulesOn(peek).filter((s) => offeredIn(s, zone))
+    if (specs.length === 0) return null
+    return specs.map((spec) => (
+      <button
+        key={spec.kind}
+        type="button"
+        className="btn btn-sm rule-btn"
+        title={ruleHint(spec)}
+        onClick={() => setRulePick({ target: { ...peekFrom, zone }, spec })}
+      >
+        {RULE_BADGE[spec.kind]}
+      </button>
+    ))
+  }
+
   /** Printed DP plus every modifier on the instance, or null for a card with none. */
   const effectiveDp = (card: ViewCard | undefined): number | null => {
     const printed = card?.cardId ? index.byId.get(card.cardId) : undefined
@@ -1052,7 +1161,7 @@ export function Board({ view, seat, index, dispatch, onUndo, onExit, refused }: 
         onDragCancel={() => setDragging(null)}
       >
         <div className="board">
-          <CardPeek card={peek} meta={index.meta} />
+          <CardPeek card={peek} meta={index.meta} actions={peekActions()} />
 
           <div className="board-main">
             <div className="edge">
@@ -1325,7 +1434,10 @@ export function Board({ view, seat, index, dispatch, onUndo, onExit, refused }: 
             {offer && (
               <div className="security-prompt cost-offer">
                 <span>
-                  <b>{offer.name}</b> — {offer.kind === 'play' ? 'play cost' : 'digivolve cost'}
+                  <b>{offer.name}</b> —{' '}
+                  {offer.kind === 'play' ? 'play cost'
+                    : offer.kind === 'digivolve' ? 'digivolve cost'
+                      : offer.label}
                 </span>
                 <span className="spacer" />
                 {offer.costs.map((c) => (
@@ -1522,6 +1634,30 @@ export function Board({ view, seat, index, dispatch, onUndo, onExit, refused }: 
           owner={browsing}
           name={browsing === seat ? 'Your trash' : `${nameOf(browsing)}'s trash`}
           onClose={() => setBrowsing(null)}
+        />
+      )}
+
+      {/*
+        DigiXros, Assembly, Jogress, Burst and Link, each as one screen showing
+        the cards you could use. Not a rules engine: it offers, it never refuses
+        — see `RulePicker` and `rules.ts` for why that is the only honest way to
+        read printed prose.
+      */}
+      {rulePick && rulePick.target.card.cardId && (
+        <RulePicker
+          subject={{
+            iid: rulePick.target.card.iid,
+            cardId: rulePick.target.card.cardId,
+            zone: rulePick.target.zone,
+            owner: rulePick.target.owner,
+          }}
+          spec={rulePick.spec}
+          me={me}
+          index={index}
+          seat={seat}
+          onCommit={runRule}
+          onPeek={peekCard}
+          onClose={() => setRulePick(null)}
         />
       )}
 

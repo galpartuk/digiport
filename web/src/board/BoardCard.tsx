@@ -5,6 +5,7 @@ import { imageUrl, type CardIndex } from '../cards'
 import type { PlayerId, Zone } from '../game/types'
 import type { ViewCard } from '../game/view'
 import { useUi, type DragData } from './boardCtx'
+import { RULE_BADGE, offeredIn, ruleHint, rulesOn } from './rules'
 
 /**
  * Card art with the host walk `imageUrl` exists for: every failure steps to the
@@ -124,6 +125,20 @@ export function BoardCard(
   const dp = printed?.dp
   const showDp = !hidden && inPlay && dp !== undefined
 
+  /*
+    DigiXros (§7-2), Assembly (§7-3), Jogress (§8-2), Burst (§8-3) and Link
+    (§4-9) are all "this card, plus some other cards you already own" — and
+    until now every one of them was a drag per source and a guess at the cost.
+    A card that carries one wears a badge, and the badge is the whole gesture.
+
+    Only on my own cards, and only where the rule can actually reach: a card in
+    the hand for four of them, and in the trash as well for Assembly, whose
+    sources are lying right beside it (§7-3-2-1).
+  */
+  const specs = !hidden && owner === ui.seat
+    ? rulesOn(printed).filter((s) => offeredIn(s, zone))
+    : []
+
   return (
     <button
       type="button"
@@ -143,14 +158,16 @@ export function BoardCard(
       */
       onClick={() => {
         if (!known) return
-        ui.peekCard(cardId)
+        // The reader is told where the card came from, so the rule buttons it
+        // grows have an instance to act on and not just a card number.
+        ui.peekCard(cardId, { card, owner, zone })
         onClick?.()
       }}
       onDoubleClick={() => { if (known) onDoubleClick?.() }}
       onContextMenu={(e) => {
         e.preventDefault()
         if (known) {
-          ui.peekCard(cardId)
+          ui.peekCard(cardId, { card, owner, zone })
           ui.openMenu({ card, owner, zone }, e.clientX, e.clientY)
         }
       }}
@@ -203,6 +220,32 @@ export function BoardCard(
             : `${dp} printed ${card.dpMod > 0 ? '+' : '−'} ${Math.abs(card.dpMod)}`}
         >
           {(dp + card.dpMod).toLocaleString('en-US')}
+        </span>
+      )}
+
+      {/*
+        The special-rule buttons. A span and not a button: this card is itself a
+        <button>, and nesting one inside another is invalid markup that browsers
+        untangle in their own ways. Bottom-left because a hand is an overlapping
+        fan and the left edge of every card is the part that stays visible.
+      */}
+      {specs.length > 0 && (
+        <span className="rule-row">
+          {specs.map((spec) => (
+            <span
+              key={spec.kind}
+              role="button"
+              tabIndex={-1}
+              className={`rule-chip rule-${spec.kind}`}
+              title={ruleHint(spec)}
+              onClick={(e) => { e.stopPropagation(); ui.openRule({ card, owner, zone }, spec.kind) }}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') ui.openRule({ card, owner, zone }, spec.kind)
+              }}
+            >
+              {RULE_BADGE[spec.kind]}
+            </span>
+          ))}
         </span>
       )}
 

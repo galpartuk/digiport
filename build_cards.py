@@ -37,7 +37,18 @@ KEEP = [
 
 # Requirement text the board turns into a "you can do this" button. Each names
 # the other cards involved, which is what makes an assisted picker possible.
-EXTRA = {"assembly": "assembly", "burstDigivolve": "burstDigivolve"}
+EXTRA_SOURCES = ("assembly", "burstDigivolve")
+
+# Which rule a line actually states, read off its printed header rather than
+# off the field it arrived in. Upstream mis-files three cards -- EX12-015,
+# EX12-029 and EX12-056 all carry "[DigiXros -2] ..." in `assembly` with
+# `digiXros` empty -- and a header is what a player reads, so it is the more
+# trustworthy of the two.
+HEADERS = [
+    ("[DigiXros", "digiXros"),
+    ("[Assembly", "assembly"),
+    ("[Burst Digivolve", "burstDigivolve"),
+]
 
 
 def host_code(card):
@@ -87,10 +98,12 @@ def extras():
         if not number:
             continue
         picked = {}
-        for src_key, out_key in EXTRA.items():
+        for src_key in EXTRA_SOURCES:
             text = (row.get(src_key) or "").strip()
-            if text and text != "-":
-                picked[out_key] = text
+            if not text or text == "-":
+                continue
+            key = next((k for head, k in HEADERS if text.startswith(head)), src_key)
+            picked.setdefault(key, text)
         if picked:
             out[number] = picked
     return out
@@ -114,7 +127,8 @@ def main():
         out["released"] = is_released(card)
         out["h"] = host_code(card)
 
-        out.update(extra.get(cid, {}))
+        for key, text in extra.get(cid, {}).items():
+            out.setdefault(key, text)
 
         jp = (card.get("names") or {}).get("japanese")
         if jp:
@@ -147,7 +161,7 @@ def main():
     hidden = [c["id"] for c in cards if not c["released"]]
     promoted = sum(1 for c in source
                    if c.get("cardType") and not c.get("released") and c.get("printedIn"))
-    for key in EXTRA.values():
+    for key in ("digiXros", "assembly", "burstDigivolve"):
         print("%-11s%7d   cards with %s requirements"
               % ("", sum(1 for c in cards if c.get(key)), key))
     print("released   %7d   (%d promoted past a stale flag)  still hidden: %s"
