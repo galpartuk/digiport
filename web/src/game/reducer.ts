@@ -695,6 +695,32 @@ export function apply(state: GameState, action: Action): GameState {
       break
     }
 
+    case 'deckTop': {
+      const me = next.players[action.by]
+      const taken = me.deck.splice(0, Math.max(0, action.n))
+      for (const card of taken) {
+        if (action.to === 'trash') {
+          // Trashed cards are public and face up (3-6-3).
+          card.faceDown = false
+          me.trash.unshift(card)
+        } else {
+          // 16-6: <Recovery> places cards FACE DOWN on TOP of the security
+          // stack, so the next security check turns up what was just put there.
+          card.faceDown = true
+          me.security.unshift(card)
+        }
+      }
+      const where = action.to === 'trash' ? 'the trash' : 'the top of their security stack'
+      // A card going from the deck to security is never named: both are private
+      // areas, and saying it out loud would leak what the next check will be.
+      const what = action.to === 'trash'
+        ? ` — ${taken.map((c) => c.cardId).join(', ') || 'nothing'}`
+        : ''
+      log(next, action.by, `${nameOf(next, action.by)} sends ${taken.length} from the top ` +
+        `of their deck to ${where}${what}`)
+      break
+    }
+
     case 'revealHand': {
       const me = next.players[action.by]
       const taken = me.hand.splice(0, me.hand.length)

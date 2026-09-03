@@ -169,6 +169,18 @@ export type Action =
   | { t: 'endAttack'; by: PlayerId }
   | { t: 'securityCheck'; by: PlayerId }
   | { t: 'revealTop'; by: PlayerId; n: number }
+  /**
+   * The top n cards of your own deck straight to the trash or the security
+   * stack, without passing through the reveal area.
+   *
+   * It needs its own action for the same reason `hatch` does: the deck is a
+   * private area (3-2-2) and `viewFor` masks it, so its cards have no instance
+   * id a client could name in a `move`. Positional is the only way to reach
+   * them. These two destinations are the ones the game actually asks for --
+   * "trash the top 3 cards of your deck" and <Recovery> (16-6), which places
+   * cards face down on TOP of the security stack.
+   */
+  | { t: 'deckTop'; by: PlayerId; n: number; to: 'trash' | 'security' }
   | { t: 'revealHand'; by: PlayerId }
   | { t: 'flip'; by: PlayerId; iid: Iid }
   /**

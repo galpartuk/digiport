@@ -788,6 +788,49 @@ describe('security and reveal', () => {
     assertIntegrity(hand)
   })
 
+  // The two things a deck top is actually asked to do: mill, and <Recovery>.
+  it('sends the top of the deck to the trash, face up', () => {
+    const top = game.players[0].deck.slice(0, 3).map((c) => c.iid)
+    const s = apply(game, act.deckTop(0, 3, 'trash'))
+    expect(s.players[0].deck).toHaveLength(game.players[0].deck.length - 3)
+    expect(s.players[0].trash.map((c) => c.iid).slice(0, 3).sort()).toEqual([...top].sort())
+    expect(s.players[0].trash.every((c) => !c.faceDown)).toBe(true)
+    expect(countCards(s)).toBe(countCards(game))
+    assertIntegrity(s)
+  })
+
+  // 16-6: <Recovery> places cards face down on TOP of the security stack.
+  it('sends the top of the deck to the top of security, face down', () => {
+    const top = game.players[0].deck[0].iid
+    const wasTop = game.players[0].security[0].iid
+    const s = apply(game, act.deckTop(0, 1, 'security'))
+    expect(s.players[0].security[0].iid).toBe(top)
+    expect(s.players[0].security[1].iid).toBe(wasTop)
+    expect(s.players[0].security[0].faceDown).toBe(true)
+    expect(s.players[0].security).toHaveLength(SECURITY_SIZE + 1)
+    assertIntegrity(s)
+  })
+
+  it('never names a card it moves between two private areas', () => {
+    const cardId = game.players[0].deck[0].cardId
+    const s = apply(game, act.deckTop(0, 1, 'security'))
+    expect(s.log.at(-1)!.text).not.toContain(cardId)
+    // The trash is public, so that one may be named.
+    expect(apply(game, act.deckTop(0, 1, 'trash')).log.at(-1)!.text)
+      .toContain(game.players[0].deck[0].cardId)
+  })
+
+  it('takes what is there when the deck is short, without failing', () => {
+    const thin: GameState = {
+      ...game,
+      players: [{ ...game.players[0], deck: game.players[0].deck.slice(0, 2) }, game.players[1]],
+    }
+    const s = apply(thin, act.deckTop(0, 5, 'trash'))
+    expect(s.players[0].deck).toHaveLength(0)
+    expect(s.players[0].trash).toHaveLength(2)
+    expect(s.winner).toBeNull()
+  })
+
   it('flips a card face up and back', () => {
     const iid = game.players[0].security[0].iid
     const up = apply(game, act.flip(0, iid))
@@ -1102,6 +1145,8 @@ describe('every action type is exercised', () => {
     run(act.securityCheck(0))
     run(act.revealTop(0, 1))
     run(act.revealHand(0))
+    run(act.deckTop(0, 1, 'trash'))
+    run(act.deckTop(0, 1, 'security'))
     run(act.flip(0, s.players[0].security[0].iid))
     run(act.nextPhase(0))          // main is the last phase, so this passes the turn
     run(act.endTurn(1))
@@ -1117,7 +1162,7 @@ describe('every action type is exercised', () => {
       'deDigivolve', 'attach', 'placeUnder', 'suspend', 'unsuspend', 'unsuspendAll',
       'setDp', 'setCounters',
       'setMemory', 'payMemory', 'nextPhase', 'endTurn', 'attack', 'endAttack',
-      'securityCheck', 'revealTop',
+      'securityCheck', 'revealTop', 'deckTop',
       'revealHand', 'flip', 'playToken', 'deleteCard', 'concede', 'chat',
       'undoRequest', 'undoAccept', 'undoDecline',
     ]

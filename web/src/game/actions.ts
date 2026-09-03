@@ -59,6 +59,8 @@ export const act = {
   endAttack: (by: PlayerId): Action => ({ t: 'endAttack', by }),
   securityCheck: (by: PlayerId): Action => ({ t: 'securityCheck', by }),
   revealTop: (by: PlayerId, n = 1): Action => ({ t: 'revealTop', by, n }),
+  deckTop: (by: PlayerId, n: number, to: 'trash' | 'security'): Action =>
+    ({ t: 'deckTop', by, n, to }),
   revealHand: (by: PlayerId): Action => ({ t: 'revealHand', by }),
   flip: (by: PlayerId, iid: Iid): Action => ({ t: 'flip', by, iid }),
 
