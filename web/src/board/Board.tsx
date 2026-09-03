@@ -69,9 +69,11 @@ const THEIRS = (zone: string) => `off:${zone}`
 // --------------------------------------------------------------- small parts
 
 function DropField(
-  { id, disabled, className, children, innerRef }:
+  { id, disabled, className, style, children, innerRef }:
   {
     id: string; disabled?: boolean; className: string; children: ReactNode
+    /** Custom properties the layout reads — see the hand strip's `--hand-gaps`. */
+    style?: React.CSSProperties
     /** A second ref onto the same node — the battle area is measured as well as dropped on. */
     innerRef?: (node: HTMLElement | null) => void
   },
@@ -81,11 +83,20 @@ function DropField(
     <div
       ref={(node) => { setNodeRef(node); innerRef?.(node) }}
       className={!disabled && isOver ? `${className} over` : className}
+      style={style}
     >
       {children}
     </div>
   )
 }
+
+/**
+ * How many overlaps a hand of `n` cards has. The fan closes up as the hand
+ * grows so it always fits the band it is in, and the arithmetic for that is a
+ * `min()` in CSS that needs the gap count — see `.hand-strip > *`.
+ */
+const handGaps = (n: number): React.CSSProperties =>
+  ({ '--hand-gaps': Math.max(1, n - 1) } as React.CSSProperties)
 
 function DropChip({ id, label }: { id: string; label: string }) {
   const { setNodeRef, isOver } = useDroppable({ id })
@@ -328,11 +339,19 @@ function AttackArrow(
 
   if (!line) return null
 
-  // Bowed to one side so the arrow never disappears under the cards it joins.
+  /*
+    Bowed to one side so the arrow never disappears under the cards it joins.
+    The two battle areas face each other now, so an attacker and its target are
+    very often at the same x and the whole arrow is the bow: it is clamped to
+    the window, or a card near the left edge would throw its curve off-screen.
+  */
   const mx = (line.x1 + line.x2) / 2
   const my = (line.y1 + line.y2) / 2
   const bow = Math.min(90, Math.abs(line.y2 - line.y1) * 0.22 + 30)
-  const cx = mx + (line.y2 > line.y1 ? bow : -bow)
+  const cx = Math.min(
+    window.innerWidth - 40,
+    Math.max(40, mx + (line.y2 > line.y1 ? bow : -bow)),
+  )
 
   return (
     <div className="atk-layer">
@@ -389,12 +408,27 @@ type SeatProps = {
   onSecurity?: () => void
   onTrash: () => void
   securityTitle: string
+  /** This seat's hand. It rides in the outer band, at the screen edge. */
+  hand: ReactNode
+  /** Name, turn light and counts — also in the outer band. */
+  nameplate: ReactNode
 }
 
 /**
- * One player's half of the mat. The two halves are the same component with the
- * geometry mirrored in CSS, so the rail (deck / security / trash) always sits
- * on the outside edge and the raising area always sits by its owner's hand.
+ * One player's half of the mat, as two stacked bands.
+ *
+ *   · **inner band** — the battle area, spanning the whole mat width, against
+ *     the memory gauge. Identical geometry on both halves, mirrored vertically,
+ *     so the two fields face each other across the centre line the way they do
+ *     on a pair of printed mats pushed together. This is where the game
+ *     happens and it is the only thing on the half that grows.
+ *   · **outer band** — everything you reach for rather than play onto: the rail
+ *     (deck, fanned security, trash), the walled raising area, the nameplate
+ *     and the hand, laid out in one horizontal line against the screen edge.
+ *
+ * The previous shape was three side-by-side columns per half, mirrored 180°,
+ * which pushed the two battle areas into opposite corners at different widths.
+ * They were diagonal to each other, not facing.
  */
 function Seat(p: SeatProps) {
   const ui = useUi()
@@ -452,40 +486,77 @@ function Seat(p: SeatProps) {
 
   return (
     <section className={['half', mine ? 'me' : 'foe', p.active ? 'active' : ''].filter(Boolean).join(' ')}>
-      <div className="mat-rail">
-        <Pile
-          dropId={zoneId('deck')}
-          disabled={!mine}
-          tone="deck"
-          label="Deck"
-          count={p.player.deck.length}
-          onClick={p.onDeck}
-          title={mine ? 'Click to draw a card' : "Opponent's deck"}
-        />
-        <SecurityFan
-          dropId={zoneId('security')}
-          disabled={!mine}
-          cards={p.player.security}
-          anchor={`player-${p.who}`}
-          aimed={p.aimed}
-          onClick={p.onSecurity}
-          title={p.securityTitle}
-        />
-        <Pile
-          dropId={zoneId('trash')}
-          disabled={!mine}
-          tone="trash"
-          label="Trash"
-          count={p.player.trash.length}
-          faceCardId={p.player.trash[0]?.cardId ?? null}
-          onClick={p.onTrash}
-          title="Click to look through this trash — it is a public area"
-        />
+      {/*
+        A reveal is a transient state everybody is waiting on, so the tray
+        floats over the half rather than holding a column of the mat open for
+        the rest of the game. It renders nothing when nothing is revealed.
+      */}
+      <div className="stage">
+        <RevealTray cards={p.player.reveal} owner={p.who} mine={mine} />
       </div>
 
-      <div className="mat-main">
-        <div className="stage">
-          <RevealTray cards={p.player.reveal} owner={p.who} mine={mine} />
+      {/* ---- inner band: the field, full mat width, against the gauge ---- */}
+      <DropField
+        id={zoneId('battle')}
+        disabled={!mine}
+        innerRef={fitRef}
+        className={p.rows ? 'zone battle rows' : 'zone battle'}
+      >
+        {/*
+          One `var(--bcard-base)` wide and nothing else. An unregistered
+          custom property keeps its token stream in the computed style, so
+          `--bcard-base` reads back as the whole `clamp(...)` string rather
+          than a length; a probe is how the fit learns the base card width in
+          pixels without the formula being written down twice.
+        */}
+        <i className="fit-probe" aria-hidden="true" />
+        <span className="zone-tag">Battle area</span>
+        {p.rows ? (
+          <div className="battle-rows">
+            <div className="brow front">
+              <div className="zone-cards">{cards(front, 'battle')}</div>
+            </div>
+            <div className="brow back">
+              <span className="brow-tag">Tamers &amp; Options</span>
+              <div className="zone-cards">{cards(back, 'battle')}</div>
+            </div>
+          </div>
+        ) : (
+          <div className="zone-cards">{cards(p.player.battle, 'battle')}</div>
+        )}
+      </DropField>
+
+      {/* ---- outer band: what you reach for, in one line at the edge ---- */}
+      <div className="mat-outer">
+        <div className="mat-rail">
+          <Pile
+            dropId={zoneId('deck')}
+            disabled={!mine}
+            tone="deck"
+            label="Deck"
+            count={p.player.deck.length}
+            onClick={p.onDeck}
+            title={mine ? 'Click to draw a card' : "Opponent's deck"}
+          />
+          <SecurityFan
+            dropId={zoneId('security')}
+            disabled={!mine}
+            cards={p.player.security}
+            anchor={`player-${p.who}`}
+            aimed={p.aimed}
+            onClick={p.onSecurity}
+            title={p.securityTitle}
+          />
+          <Pile
+            dropId={zoneId('trash')}
+            disabled={!mine}
+            tone="trash"
+            label="Trash"
+            count={p.player.trash.length}
+            faceCardId={p.player.trash[0]?.cardId ?? null}
+            onClick={p.onTrash}
+            title="Click to look through this trash — it is a public area"
+          />
         </div>
 
         {/*
@@ -524,35 +595,8 @@ function Seat(p: SeatProps) {
           </div>
         </div>
 
-        <DropField
-          id={zoneId('battle')}
-          disabled={!mine}
-          innerRef={fitRef}
-          className={p.rows ? 'zone battle rows' : 'zone battle'}
-        >
-          {/*
-            One `var(--bcard-base)` wide and nothing else. An unregistered
-            custom property keeps its token stream in the computed style, so
-            `--bcard-base` reads back as the whole `clamp(...)` string rather
-            than a length; a probe is how the fit learns the base card width in
-            pixels without the formula being written down twice.
-          */}
-          <i className="fit-probe" aria-hidden="true" />
-          <span className="zone-tag">Battle area</span>
-          {p.rows ? (
-            <div className="battle-rows">
-              <div className="brow front">
-                <div className="zone-cards">{cards(front, 'battle')}</div>
-              </div>
-              <div className="brow back">
-                <span className="brow-tag">Tamers &amp; Options</span>
-                <div className="zone-cards">{cards(back, 'battle')}</div>
-              </div>
-            </div>
-          ) : (
-            <div className="zone-cards">{cards(p.player.battle, 'battle')}</div>
-          )}
-        </DropField>
+        {p.hand}
+        {p.nameplate}
       </div>
     </section>
   )
@@ -714,8 +758,17 @@ export function Board({ view, seat, index, dispatch, onUndo, onExit, refused }: 
   const me = view.players[seat]
   const foe = view.players[foeId]
 
-  /** The docked reader's subject. Sticky: leaving a card does not clear it. */
+  /** The reader's subject. Sticky: leaving a card does not clear it. */
   const [peek, setPeek] = useState<Card | null>(null)
+  /**
+   * Is the reader slid in over the mat? Clicking a card opens it; the tab on
+   * its edge and Escape push it back out. It is a drawer rather than a column
+   * because a reference panel you consult a few times a turn should not be
+   * holding a sixth of the screen open while you play.
+   */
+  const [peekOpen, setPeekOpen] = useState(false)
+  /** Are the keyboard hints unfolded? Onboarding text, not furniture. */
+  const [showKeys, setShowKeys] = useState(false)
   /**
    * Where the reader's card was picked up from, when it was picked up off the
    * board at all. A card id is enough to *read* a card and not nearly enough to
@@ -769,6 +822,7 @@ export function Board({ view, seat, index, dispatch, onUndo, onExit, refused }: 
       if (card) {
         setPeek(card)
         setPeekFrom(from ?? null)
+        setPeekOpen(true)
       }
     },
     [index],
@@ -837,6 +891,19 @@ export function Board({ view, seat, index, dispatch, onUndo, onExit, refused }: 
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
   }, [dispatch, onUndo, seat])
+
+  /**
+   * Escape pushes the reader back out of the way. It waits its turn: the trash
+   * browser, the rule picker and the context menus all close on Escape too and
+   * they are on top, so the drawer only takes the key when nothing is over it.
+   */
+  const overlayUp = browsing !== null || rulePick !== null || menu !== null || dropChoice !== null
+  useEffect(() => {
+    if (!peekOpen || overlayUp) return
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setPeekOpen(false) }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [peekOpen, overlayUp])
 
   // Newest at the bottom, always in view.
   const logCount = view.log.length
@@ -1129,8 +1196,11 @@ export function Board({ view, seat, index, dispatch, onUndo, onExit, refused }: 
         <b>{nameOf(who)}</b>
         {who === seat && <span className="you-tag">you</span>}
         <span>Hand {pl.hand.length}</span>
-        <span>Deck {pl.deck.length}</span>
-        <span>Security {pl.security.length}</span>
+        {/*
+          Deck and security used to be repeated here. They are counted on the
+          piles standing a few pixels away in the same band now, and the
+          nameplate is competing with the hand for that band's width.
+        */}
         <button
           type="button"
           className="linky"
@@ -1160,25 +1230,16 @@ export function Board({ view, seat, index, dispatch, onUndo, onExit, refused }: 
         onDragEnd={onDragEnd}
         onDragCancel={() => setDragging(null)}
       >
-        <div className="board">
-          <CardPeek card={peek} meta={index.meta} actions={peekActions()} />
+        <div className={peekOpen ? 'board peek-open' : 'board'}>
+          <CardPeek
+            card={peek}
+            meta={index.meta}
+            actions={peekActions()}
+            open={peekOpen}
+            onToggle={() => setPeekOpen((o) => !o)}
+          />
 
           <div className="board-main">
-            <div className="edge">
-              {seatLine(foeId)}
-              {/*
-                Their hand is face down (§3-5-3): there is nothing on it to
-                read and the nameplate already carries the count, so it is a
-                strip of backs rather than a full row of cards. That row was
-                costing the mat a whole card-height to say a number.
-              */}
-              <DropField id={THEIRS('hand')} disabled className="hand-strip foe-hand">
-                {foe.hand.map((c) => (
-                  <BoardCard key={c.iid} card={c} zone="hand" owner={foeId} />
-                ))}
-              </DropField>
-            </div>
-
             <Seat
               player={foe}
               who={foeId}
@@ -1196,6 +1257,24 @@ export function Board({ view, seat, index, dispatch, onUndo, onExit, refused }: 
               securityTitle={view.phase === 'main'
                 ? 'Check security — reveals their top card'
                 : 'Security checks happen in the main phase'}
+              nameplate={seatLine(foeId)}
+              hand={(
+                /*
+                  Their hand is face down (§3-5-3): there is nothing on it to
+                  read and the nameplate already carries the count, so it is a
+                  strip of backs rather than a full row of cards.
+                */
+                <DropField
+                  id={THEIRS('hand')}
+                  disabled
+                  className="hand-strip foe-hand"
+                  style={handGaps(foe.hand.length)}
+                >
+                  {foe.hand.map((c) => (
+                    <BoardCard key={c.iid} card={c} zone="hand" owner={foeId} />
+                  ))}
+                </DropField>
+              )}
             />
 
             {/*
@@ -1256,16 +1335,23 @@ export function Board({ view, seat, index, dispatch, onUndo, onExit, refused }: 
               onDeck={() => dispatch(act.draw(seat, 1))}
               onTrash={() => setBrowsing(seat)}
               securityTitle="Your security stack — face down, spread so the count reads"
+              nameplate={seatLine(seat)}
+              hand={(
+                /*
+                  A hand is a fan, not a row: the cards overlap hard and the
+                  strip is shorter than a card, so what shows is the top of
+                  each one — name, art, cost — and hovering lifts the whole
+                  card clear. It used to be a full card-height band across the
+                  bottom of the screen, which is a lot of mat to spend on
+                  cards that are not in play yet.
+                */
+                <DropField id={MY('hand')} className="hand-strip" style={handGaps(me.hand.length)}>
+                  {me.hand.map((c) => (
+                    <BoardCard key={c.iid} card={c} zone="hand" owner={seat} draggable />
+                  ))}
+                </DropField>
+              )}
             />
-
-            <div className="edge">
-              <DropField id={MY('hand')} className="hand-strip">
-                {me.hand.map((c) => (
-                  <BoardCard key={c.iid} card={c} zone="hand" owner={seat} draggable />
-                ))}
-              </DropField>
-              {seatLine(seat)}
-            </div>
           </div>
 
           <div className="rail">
@@ -1464,6 +1550,11 @@ export function Board({ view, seat, index, dispatch, onUndo, onExit, refused }: 
 
             {refused && <div className="refused">{refused}</div>}
 
+            {/*
+              Six verbs on one line instead of two. Every row the rail spends
+              is a row the log does not get, and none of these needs a line of
+              its own to be found.
+            */}
             <div className="rail-actions">
               {confirmConcede ? (
                 <>
@@ -1481,23 +1572,46 @@ export function Board({ view, seat, index, dispatch, onUndo, onExit, refused }: 
                 </>
               ) : (
                 <>
-                  <button type="button" className="btn" onClick={() => dispatch(act.endTurn(seat))}>
+                  <button
+                    type="button"
+                    className="btn"
+                    title="End turn (E)"
+                    onClick={() => dispatch(act.endTurn(seat))}
+                  >
                     End turn
                   </button>
-                  <button type="button" className="btn" onClick={onUndo}>Undo</button>
-                  <button type="button" className="btn" onClick={() => setConfirmConcede(true)}>
+                  <button type="button" className="btn" title="Undo (Ctrl+Z)" onClick={onUndo}>
+                    Undo
+                  </button>
+                  <button
+                    type="button"
+                    className="btn"
+                    title="Draw a card (D)"
+                    onClick={() => dispatch(act.draw(seat, 1))}
+                  >
+                    Draw
+                  </button>
+                  <button
+                    type="button"
+                    className="btn"
+                    title="Shuffle your deck (S)"
+                    onClick={() => dispatch(act.shuffleDeck(seat))}
+                  >
+                    Shuffle
+                  </button>
+                  <button
+                    type="button"
+                    className="btn"
+                    title="Concede the game"
+                    onClick={() => setConfirmConcede(true)}
+                  >
                     Concede
+                  </button>
+                  <button type="button" className="btn" title="Leave the game" onClick={onExit}>
+                    Exit
                   </button>
                 </>
               )}
-            </div>
-
-            <div className="rail-actions">
-              <button type="button" className="btn" onClick={() => dispatch(act.draw(seat, 1))}>Draw</button>
-              <button type="button" className="btn" onClick={() => dispatch(act.shuffleDeck(seat))}>
-                Shuffle
-              </button>
-              <button type="button" className="btn" onClick={onExit}>Exit</button>
             </div>
 
             {/*
@@ -1535,8 +1649,6 @@ export function Board({ view, seat, index, dispatch, onUndo, onExit, refused }: 
               them off is a view preference and nothing else changes.
             */}
             <div className="reveal-bar opt-bar">
-              <span className="zone-label">Battle rows</span>
-              <span className="spacer" />
               <button
                 type="button"
                 className={rows ? 'toggle on' : 'toggle'}
@@ -1549,6 +1661,22 @@ export function Board({ view, seat, index, dispatch, onUndo, onExit, refused }: 
               >
                 <span className="toggle-knob" />
                 {rows ? 'Two rows' : 'One row'}
+              </button>
+              <span className="spacer" />
+              {/*
+                The controls were onboarding text: three permanent lines of it
+                in the middle of the rail, read once and then read never again.
+                Folded behind a mark, they cost one line and are still one
+                click away.
+              */}
+              <button
+                type="button"
+                className={showKeys ? 'toggle on keys-toggle' : 'toggle keys-toggle'}
+                aria-expanded={showKeys}
+                title={showKeys ? 'Hide the controls' : 'Mouse and keyboard controls'}
+                onClick={() => setShowKeys((k) => !k)}
+              >
+                ?
               </button>
             </div>
 
@@ -1584,8 +1712,10 @@ export function Board({ view, seat, index, dispatch, onUndo, onExit, refused }: 
               </form>
             </div>
 
+            {showKeys && (
             <div className="keys">
-              <b>Click</b> a card to read it here on the left · <b>double-click</b> a card in
+              <b>Click</b> a card to read it in the drawer on the left ·{' '}
+              <b>double-click</b> a card in
               play to suspend or unsuspend it · <b>right-click</b> for attack, move and
               everything else.
               <br />
@@ -1595,8 +1725,9 @@ export function Board({ view, seat, index, dispatch, onUndo, onExit, refused }: 
               <br />
               <kbd>D</kbd> draw · <kbd>S</kbd> shuffle · <kbd>R</kbd> reveal 1 ·{' '}
               <kbd>Space</kbd> next phase · <kbd>E</kbd> end turn · <kbd>Ctrl</kbd>+<kbd>Z</kbd> undo ·{' '}
-              <kbd>0</kbd>–<kbd>9</kbd> pay
+              <kbd>0</kbd>–<kbd>9</kbd> pay · <kbd>Esc</kbd> close the reader
             </div>
+            )}
           </div>
 
           {/* Inside .board so the overlay card inherits the --bcard sizing. */}

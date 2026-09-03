@@ -759,55 +759,81 @@ a.btn {
 }
 
 /* ==========================================================================
-   Game board — the playmat
+   Game board — the arena
 
-   Laid out the way a Digimon mat is laid out (comprehensive rules §3, and the
-   printed mats): an outer rail carrying the deck, the fanned security stack and
-   the trash; a walled raising area by the player's own hand; the battle area
-   filling the rest; and one shared memory gauge running between the halves.
-   The opponent's half is the same markup with the geometry mirrored, so the
-   rail is always on the outside edge and the raising area always sits closest
-   to its owner.
+   Two players facing each other across a centre line, which is what a pair of
+   printed mats pushed together actually looks like. Each half is two stacked
+   bands:
+
+     · the **battle area**, spanning the whole mat width and lying against the
+       memory gauge — identical geometry on both halves, mirrored vertically,
+       so the two fields face each other rather than sitting diagonally
+       opposite. It is the only part of a half that grows.
+     · the **outer band** against the screen edge, one horizontal line holding
+       everything you reach for rather than play onto: the rail (deck, fanned
+       security, trash), the walled raising area, the nameplate and the hand.
+
+   The card reader is a drawer over the left edge, not a column, and the rail
+   on the right is the only permanent furniture. Between them the mat now takes
+   about four fifths of the width instead of five eighths.
    ========================================================================== */
 
 .board {
   /*
-    The mat is a fixed stack of proportional rows, so card size has to come from
-    the viewport rather than a constant; 0.715 is 430/601, a card's aspect ratio.
+    Card size comes from the viewport, because the mat is a stack of
+    proportional bands: each number below is a fraction of the viewport height,
+    and 601/430 turns a card's width into its height.
 
-    The divisor is the mat's height measured in card-heights, and it is the
-    number that decides whether a Digimon is readable. It used to be 7.6, which
-    on a 674px viewport produced a 44px card — two Digimon at that size are the
-    same picture. Three things bought it down to ~4.2:
+    There are two base sizes now, and separating them is what let the field
+    grow. `--bcard-base` is the *furniture* size — hand, piles, breeding slot,
+    the things in the outer band — and every pixel of it is a pixel the battle
+    bands do not get, so it is deliberately small. `--field-base` is what a
+    card in the battle area is worth, and it is more than twice as large: the
+    field is the thing the game happens on and it should look like it.
 
-      · the opponent's hand is face down, so it is a strip of backs (0.34) and
-        not a full row of cards (1.0);
-      · the rail carries the deck and the trash side by side with the security
-        fan under them, so a half costs ~1.4 card-heights instead of ~2.9;
-      · the memory gauge and its cost strip share one line.
-
-    This is the *base* size — what a card is worth on a mat that is not
-    crowded, and what the hand, the piles and the raising area are always drawn
-    at. The battle areas start here and then fit themselves to their own box
-    (see .zone.battle and board/fit.ts): they never scroll and never clip,
-    because a card you cannot see is a card you forget you have.
+    `--vh` is `100vh` and exists only so the geometry can be measured at a
+    target viewport without resizing a window.
   */
-  --bcard-base: clamp(64px, calc((100vh - 200px) / 4.2 * 0.715), 112px);
+  --vh: 100vh;
+  --bcard-base: clamp(44px, calc((var(--vh) - 88px) * 0.0905), 84px);
   --bcard: var(--bcard-base);
   --bcard-h: calc(var(--bcard) * 601 / 430);
   /*
-    The rail's piles are not play cards — nothing is read off them, they are
-    handles onto a deck, a trash and a security stack — so they run smaller than
-    the cards on the mat and give the height back to the field.
+    The field's own base. The battle band is a little over a third of the
+    viewport, so a card that fills it is about a fifth of the viewport wide;
+    board/fit.ts scales down from here when the field fills up, never up.
   */
-  --pile: calc(var(--bcard) * 0.78);
+  --field-base: clamp(60px, calc((var(--vh) - 88px) * 0.198), 150px);
+  /*
+    A hand card is bigger than the other furniture — it is a card you read —
+    but the strip that holds it is shorter than the card, so a hand is a fan
+    with its tops showing rather than a full row.
+  */
+  --hand-card: calc(var(--bcard-base) * 1.34);
+  --hand-show: 0.76;
+  /*
+    The outer band is one fixed height on both halves, derived from the one
+    thing in it that has to hold a whole card: the breeding slot. Everything
+    else fits inside it, which is what keeps the two battle bands exactly the
+    same size — the halves are mirrored, so any pixel one band spends the other
+    has to spend too.
+  */
+  --outer-h: calc(var(--bcard-base) * 0.70 * 601 / 430 + 30px);
+  /*
+    The piles are not play cards — nothing is read off them, they are handles
+    onto a deck, a trash and a security stack — so they run smaller still.
+  */
+  --pile: calc(var(--bcard) * 0.92);
   --pile-h: calc(var(--pile) * 601 / 430);
   /* How much of each security card's edge shows in the fan. */
-  --sec-step: max(6px, calc(var(--pile-h) * 0.1));
+  --sec-step: max(5px, calc(var(--pile-h) * 0.1));
   --mat-rule: rgb(120 165 210 / 0.13);
+  /* How wide the reader is when it slides in. */
+  --peek-w: 262px;
 
+  position: relative;
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 312px;
+  grid-template-columns: minmax(0, 1fr) 300px;
   height: 100%;
   min-height: 0;
   background:
@@ -817,17 +843,22 @@ a.btn {
 .board-main {
   position: relative;
   display: grid;
-  grid-template-rows: auto minmax(0, 1fr) auto minmax(0, 1fr) auto;
+  /* Two halves and the line they face each other across. Nothing else. */
+  grid-template-rows: minmax(0, 1fr) auto minmax(0, 1fr);
   min-height: 0;
   min-width: 0;
-  /* A mat that has run out of room clips rather than pushing itself off-screen. */
+  /*
+    A mat that has run out of room clips rather than pushing itself off-screen.
+    It is also what cuts the hand off at the table edge: the strip is shorter
+    than its cards on purpose, and the overflow lands here.
+  */
   overflow: hidden;
   /*
-    Every pixel of chrome here is a pixel the battle areas do not get, and the
-    field is now the thing that has to fit rather than the thing that scrolls.
+    Every pixel of chrome is a pixel the battle areas do not get, and the field
+    is the thing that has to fit rather than the thing that scrolls.
   */
-  padding: 4px 10px 5px;
-  gap: 2px;
+  padding: 3px 8px 4px;
+  gap: 3px;
 }
 
 /* A faint printed grid under everything, so empty mat reads as mat. */
@@ -851,10 +882,10 @@ a.btn {
 .half {
   position: relative;
   display: grid;
-  gap: 8px;
+  gap: 3px;
   min-height: 0;
   min-width: 0;
-  padding: 6px 8px;
+  padding: 3px 6px;
   border-radius: 13px;
   border: 1px solid rgb(120 165 210 / 0.10);
   background: linear-gradient(180deg, rgb(255 255 255 / 0.022), rgb(255 255 255 / 0));
@@ -862,14 +893,21 @@ a.btn {
   transition: border-color 0.3s ease, background 0.3s ease, box-shadow 0.3s ease;
 }
 
+/*
+  Two bands, stacked. The battle band is always the one against the gauge, so
+  the two fields face each other; the outer band is always against the screen
+  edge. That is the whole mirror — the halves are otherwise identical.
+*/
 .half.me {
-  grid-template-columns: auto minmax(0, 1fr);
-  grid-template-areas: 'rail main';
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: minmax(0, 1fr) auto;
+  grid-template-areas: 'battle' 'outer';
 }
 
 .half.foe {
-  grid-template-columns: minmax(0, 1fr) auto;
-  grid-template-areas: 'main rail';
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: auto minmax(0, 1fr);
+  grid-template-areas: 'outer' 'battle';
 }
 
 /* The turn player's half is lit; the other one rests. */
@@ -905,79 +943,59 @@ a.btn {
   background: linear-gradient(90deg, transparent, var(--c-red), transparent);
 }
 
+/* --------------------------------------------------------- the outer band
+
+   One line, against the screen edge, holding everything that is not the field:
+   the rail, the raising area, the hand and the nameplate. Laid out sideways
+   because width is what this mat has spare and height is what it does not —
+   the same three piles stacked into a column used to cost the field most of a
+   card-height on every half.                                                 */
+
+.mat-outer {
+  grid-area: outer;
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
+  height: var(--outer-h);
+  min-width: 0;
+}
+
+/* Mirrored end to end, the way the far side of a table is. */
+.half.foe .mat-outer { flex-direction: row-reverse; align-items: flex-end; }
+
 /* ----------------------------------------------------- the rail: deck / security / trash */
 
-/*
-  Deck and trash side by side, the security fan spread underneath them. Stacked
-  in one column the rail was the tallest thing on either half — nearly three
-  card-heights of furniture framing a field one card tall — and every card on
-  the mat was shrunk to make room for it. Two columns costs width the mat has
-  and gives back the height it does not.
-*/
 .mat-rail {
-  grid-area: rail;
-  display: grid;
-  grid-template-columns: auto auto;
-  grid-template-areas:
-    'deck trash'
-    'sec  sec';
-  justify-content: center;
-  align-content: space-between;
-  justify-items: center;
-  gap: 6px;
-  min-height: 0;
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  height: 100%;
+  flex: 0 0 auto;
 }
 
-/* Mirrored: the opponent's piles sit furthest from the gauge, like mine. */
-.half.foe .mat-rail {
-  grid-template-areas:
-    'sec  sec'
-    'deck trash';
-}
+.half.foe .mat-rail { align-items: flex-end; }
 
-.mat-rail > .pile-deck { grid-area: deck; }
+/* --------------------------------------------------------------- the stage
 
-.mat-rail > .pile-trash { grid-area: trash; }
-
-.mat-rail > .sec-zone { grid-area: sec; }
-
-/* ------------------------------------------- the play region: stage / raising / battle */
-
-.mat-main {
-  grid-area: main;
-  display: grid;
-  gap: 8px;
-  min-height: 0;
-  min-width: 0;
-}
-
-.half.me .mat-main {
-  grid-template-columns: auto minmax(0, 1fr);
-  grid-template-rows: minmax(0, 1fr) auto;
-  grid-template-areas:
-    'stage battle'
-    'raise battle';
-}
-
-.half.foe .mat-main {
-  grid-template-columns: minmax(0, 1fr) auto;
-  grid-template-rows: auto minmax(0, 1fr);
-  grid-template-areas:
-    'battle raise'
-    'battle stage';
-}
+   The reveal tray. A reveal is a state everyone is waiting on and then it is
+   over, so it floats above the half instead of holding a column open for the
+   whole game.                                                               */
 
 .stage {
-  grid-area: stage;
+  position: absolute;
+  z-index: 30;
+  left: 10px;
+  right: 10px;
   display: flex;
-  align-items: flex-end;
-  min-width: 0;
-  min-height: 0;
+  justify-content: center;
+  pointer-events: none;
 }
 
-.half.foe .stage { align-items: flex-start; }
+.stage > * { pointer-events: auto; }
 
-.half.foe .raising { justify-self: end; }
+.half.me .stage { top: 4px; }
+
+.half.foe .stage { bottom: 4px; }
 
 /* ------------------------------------------------------------- zone plates */
 
@@ -989,8 +1007,8 @@ a.btn {
 .zone {
   position: relative;
   min-width: 0;
-  min-height: calc(var(--bcard-h) + 16px);
-  padding: 12px 7px 6px;
+  min-height: calc(var(--bcard-h) + 13px);
+  padding: 10px 6px 4px;
   border-radius: 10px;
   border: 1px solid rgb(120 165 210 / 0.13);
   background: linear-gradient(180deg, rgb(255 255 255 / 0.03), rgb(0 0 0 / 0.12));
@@ -999,7 +1017,7 @@ a.btn {
     inset 0 0 26px rgb(0 0 0 / 0.5);
 }
 
-.half.foe .zone { padding: 6px 7px 12px; }
+.half.foe .zone { padding: 4px 6px 10px; }
 
 .zone.over {
   border-color: var(--accent);
@@ -1020,6 +1038,13 @@ a.btn {
 .zone.battle {
   grid-area: battle;
   min-height: 0;
+  /*
+    The field is drawn at its own, much larger base: `--field-base` rather than
+    the furniture size the rest of the mat uses. `.fit-probe` reads
+    `--bcard-base` out of this element, so overriding it here is also what
+    tells board/fit.ts what a full-size card in the field is worth.
+  */
+  --bcard-base: var(--field-base);
   /*
     Never a scroll container. `min-height: 0` is what makes that safe: it stops
     the zone's own contents from being able to grow its grid row, so the box is
@@ -1086,11 +1111,17 @@ a.btn {
   hazard hatching rather than as one more plate on the mat.
 */
 .raising {
-  grid-area: raise;
   position: relative;
-  /* The stage above can widen this column; the enclosure keeps its own size. */
-  justify-self: start;
-  padding: 13px 8px 8px;
+  flex: 0 0 auto;
+  /*
+    A sideline, not a field: the egg deck and the one card in the breeding area
+    are drawn smaller than a hand card, because the height this box costs is
+    charged straight to the battle band above it.
+  */
+  --bcard: calc(var(--bcard-base) * 0.70);
+  --bcard-h: calc(var(--bcard) * 601 / 430);
+  height: 100%;
+  padding: 10px 6px 4px;
   border-radius: 11px;
   border: 1px solid rgb(244 185 66 / 0.3);
   background:
@@ -1102,7 +1133,7 @@ a.btn {
     0 4px 16px rgb(0 0 0 / 0.45);
 }
 
-.half.foe .raising { padding: 8px 8px 13px; }
+.half.foe .raising { padding: 4px 6px 10px; }
 
 .raising-head {
   position: absolute;
@@ -1141,14 +1172,17 @@ a.btn {
 .raising-slots {
   display: flex;
   align-items: stretch;
-  gap: 8px;
+  gap: 6px;
 }
+
+/* The piles inside the enclosure follow its smaller card, not the rail's. */
+.raising .pile { --pile: var(--bcard); --pile-h: var(--bcard-h); }
 
 .zone.breed {
   display: grid;
   align-content: center;
   justify-items: center;
-  min-width: calc(var(--bcard) + 18px);
+  min-width: calc(var(--bcard) + 14px);
 }
 
 .zone.breed .zone-cards { justify-content: center; }
@@ -1157,6 +1191,9 @@ a.btn {
 .zone.breed .zone-cards:empty::before {
   content: '';
   display: block;
+  /* `*` does not match pseudo-elements: without this the empty slot is two
+     pixels taller than a card, and the two halves stop matching. */
+  box-sizing: border-box;
   width: var(--bcard);
   height: var(--bcard-h);
   border: 1px dashed rgb(120 165 210 / 0.2);
@@ -1541,16 +1578,55 @@ a.btn {
 
 /* -------------------------------------------------------------------- hand */
 
+/*
+  A hand is a fan held at the edge of the table, not a row of cards laid out on
+  it. Two things follow, and both of them are height the field gets instead:
+
+    · the cards overlap by a third rather than a quarter, so ten of them are
+      about the width of four;
+    · the strip is shorter than a card. What shows is the top ~76% — the name,
+      the cost, most of the art — and the rest runs off the bottom of the board
+      the way a real hand runs off the edge of the table (.board-main clips it).
+      Hovering lifts the whole card clear of the mat, and clicking reads it in
+      the drawer, so nothing is actually hidden.
+
+  It used to be a full card-height band across the bottom of the screen: 134px,
+  18% of the viewport, to hold cards that are not in play yet.
+*/
 .hand-strip {
+  --bcard: var(--hand-card);
+  --bcard-h: calc(var(--bcard) * 601 / 430);
+  /* `0` and not `auto`: the strip is exactly the band's leftover width, which
+     is the width the fan below closes itself up against. */
+  flex: 1 1 0;
+  min-width: 0;
   display: flex;
   justify-content: center;
-  align-items: flex-end;
-  min-height: calc(var(--bcard-h) + 8px);
-  padding: 4px 8px;
+  align-items: flex-start;
+  /* Never taller than the band: past a certain viewport the fan would start
+     setting the band's height, and with it the field's. */
+  height: min(calc(var(--bcard-h) * var(--hand-show)), 100%);
+  align-self: flex-end;
+  padding: 0 8px;
   border-radius: 12px;
 }
 
-.hand-strip > * { margin-left: calc(var(--bcard) * -0.24); }
+.half.foe .hand-strip { align-items: flex-end; align-self: flex-start; }
+
+/*
+  A third of a card by default, and tighter than that whenever the hand would
+  otherwise run past the band it is in. A percentage margin on a flex item
+  resolves against the flex container's content width, so `(100% - card) /
+  gaps - card` is exactly the step at which the whole fan spans the strip and
+  no more; `min()` of two negative lengths takes the tighter of the two. React
+  supplies `--hand-gaps`, which is the one number CSS cannot count.
+*/
+.hand-strip > * {
+  margin-left: min(
+    calc(var(--bcard) * -0.34),
+    calc((100% - var(--bcard)) / var(--hand-gaps, 1) - var(--bcard))
+  );
+}
 
 .hand-strip > *:first-child { margin-left: 0; }
 
@@ -1560,14 +1636,11 @@ a.btn {
   strip of backs a third of a card deep. A full row of card backs was costing a
   whole card-height of the mat to say a number.
 */
-.hand-strip.foe-hand {
-  align-items: flex-start;
-  min-height: calc(var(--bcard-h) * 0.34 + 8px);
-  padding-bottom: 0;
-}
+/* Face down (§3-5-3): nothing on those cards to read, only how many. */
+.hand-strip.foe-hand { height: calc(var(--bcard-h) * 0.3); }
 
 .hand-strip.foe-hand .bcard {
-  height: calc(var(--bcard-h) * 0.34);
+  height: calc(var(--bcard-h) * 0.3);
   cursor: default;
   margin-bottom: 0;
 }
@@ -1578,28 +1651,29 @@ a.btn {
 
 .hand-strip .bcard { box-shadow: 0 5px 14px rgb(0 0 0 / 0.65); }
 
-.hand-strip .bcard:hover { transform: translateY(-12px) scale(1.03); }
+/*
+  The lift is what makes a short strip honest: a hovered card rises clear of
+  the band and over the field, whole, and drops back when the pointer leaves.
+*/
+.half.me .hand-strip .bcard:hover {
+  z-index: 20;
+  transform: translateY(calc(var(--bcard-h) * (var(--hand-show) - 1) - 8px)) scale(1.04);
+}
 
 .hand-strip.over {
   background: rgb(53 200 240 / 0.07);
   box-shadow: inset 0 0 0 1px rgb(53 200 240 / 0.5);
 }
 
-.edge {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  min-height: 0;
-}
-
 /* A nameplate rather than a line of text: it is the only place a player's own
    totals live, and the turn light belongs on it. */
 .seat-line {
+  flex: 0 0 auto;
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 9px;
   align-self: center;
-  padding: 1px 12px;
+  padding: 1px 10px;
   border-radius: 999px;
   border: 1px solid var(--line-soft);
   background: rgb(13 19 30 / 0.78);
@@ -1646,12 +1720,17 @@ a.btn {
 
 /* ------------------------------------------------------------ memory gauge */
 
+/*
+  The centre line. It is the one thing both halves touch, so it is also what
+  makes them read as facing each other — which is why it is a thin rule across
+  the whole mat and not a panel.
+*/
 .gauge-row {
   display: flex;
   align-items: center;
   justify-content: center;
   gap: 14px;
-  padding: 2px 0;
+  padding: 0;
   flex-wrap: wrap;
 }
 
@@ -1660,7 +1739,7 @@ a.btn {
   display: flex;
   align-items: center;
   gap: 10px;
-  padding: 4px 12px;
+  padding: 2px 12px;
   border-radius: 999px;
   border: 1px solid var(--line);
   background: linear-gradient(180deg, #0a1120, #141d2e);
@@ -1684,8 +1763,8 @@ a.btn {
 .gauge { display: flex; gap: 2px; }
 
 .gauge-stop {
-  width: 18px;
-  height: 18px;
+  width: 17px;
+  height: 17px;
   border-radius: 50%;
   border: 1px solid var(--line);
   background: #0d1421;
@@ -1793,7 +1872,7 @@ a.btn {
   padding: 5px 8px;
 }
 
-.readout b { display: block; font-size: 16px; line-height: 1.15; }
+.readout b { display: block; font-size: 15px; line-height: 1.15; }
 
 .readout span {
   font-size: 9px;
@@ -1810,9 +1889,19 @@ a.btn {
 
 .readout .mem.theirs b { color: var(--c-red); }
 
-.rail-actions { display: flex; gap: 6px; }
+/*
+  Two rows of three rather than one row of six. At a 300px rail, six buttons on
+  a line leaves 50px each, which is why they had been shortened to "Shuf" and
+  "Cede" -- an abbreviation nobody asked for on the two buttons whose meaning
+  most needs to be unambiguous.
+*/
+.rail-actions {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 6px;
+}
 
-.rail-actions .btn { flex: 1; padding: 6px 4px; font-size: 12px; }
+.rail-actions .btn { min-width: 0; padding: 6px 2px; font-size: 11.5px; }
 
 .reveal-bar { display: flex; align-items: center; gap: 4px; }
 
@@ -2056,9 +2145,6 @@ a.btn {
 
 .security-prompt .spacer { flex: 1; }
 
-@media (max-width: 1240px) {
-  .board { grid-template-columns: minmax(0, 1fr) 264px; }
-}
 
 /* ------------------------------------------------ play routes: the dead ends */
 
@@ -2183,29 +2269,85 @@ a.btn {
    Game board — the reader, the rows, and the attack
    ========================================================================== */
 
-/* Three columns now: the card reader, the mat, the rail. */
-.board { grid-template-columns: 262px minmax(0, 1fr) 312px; }
-
-/* ------------------------------------------------------- the docked reader */
+/* ------------------------------------------------------ the reader drawer */
 
 /*
-  Fixed down the left edge, opposite the rail, and driven by clicks rather than
-  by the pointer. A reader that follows the cursor covers the board exactly
-  where you are trying to look, and empties itself the moment you glance away.
+  Click-driven, not hover-driven, and no longer a column. As a permanent
+  262px panel it held 17% of the screen open to show a card nobody was
+  currently reading; as a drawer it slides over the left edge of the mat when
+  you click a card and pushes back out on Escape or on its own tab, and the
+  field keeps the width either way.
+
+  It is still sticky — the pointer leaving a card does not empty it — because
+  the whole point is to read a card while you think about it.
 */
 .peek {
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: var(--peek-w);
   /* Above the pile browser's scrim: reading a card is the point of opening one. */
-  position: relative;
   z-index: 56;
   display: flex;
   flex-direction: column;
   min-height: 0;
-  overflow-y: auto;
-  padding: 10px;
-  gap: 9px;
   background: var(--panel);
   border-right: 1px solid var(--line);
+  box-shadow: 12px 0 34px rgb(0 0 0 / 0.55);
+  transform: translateX(-100%);
+  transition: transform 0.18s ease;
 }
+
+.peek.open { transform: none; }
+
+/* The scrolling body. The tab has to sit outside it to stay reachable. */
+.peek-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+  padding: 10px;
+}
+
+/*
+  The only part of the drawer that is always on screen: a handle on its outer
+  edge, which rides out with the panel when it opens.
+*/
+.peek-tab {
+  position: absolute;
+  left: 100%;
+  top: 50%;
+  transform: translateY(-50%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 5px;
+  padding: 12px 4px;
+  border: 1px solid var(--line);
+  border-left: 0;
+  border-radius: 0 8px 8px 0;
+  background: var(--panel);
+  color: var(--ink-faint);
+  cursor: pointer;
+  box-shadow: 4px 0 14px rgb(0 0 0 / 0.5);
+}
+
+.peek-tab:hover { color: var(--accent); border-color: var(--accent); }
+
+.peek-tab-mark { font-size: 13px; line-height: 1; }
+
+.peek-tab-label {
+  font-size: 8.5px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  writing-mode: vertical-rl;
+}
+
+/* Parked, the drawer's own contents must not be reachable by tab or pointer. */
+.peek:not(.open) .peek-scroll { visibility: hidden; }
 
 .peek-art {
   border-radius: 9px;
@@ -2593,16 +2735,35 @@ a.btn {
 
 .toggle.on .toggle-knob::after { transform: translateX(10px); background: var(--accent); }
 
+/* The controls, folded away. One mark instead of three lines of onboarding. */
+.keys-toggle {
+  padding: 2px 9px;
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1.3;
+}
+
+/* ------------------------------------------------- the reveal tray, floating */
+
+/*
+  Floating over the half rather than holding a column of it open, so it can
+  afford a readable card: the mat's furniture size is deliberately small and
+  a revealed card is one you have to make a decision about.
+*/
+.stage .reveal-tray {
+  max-width: min(760px, 100%);
+  --rcard: calc(var(--hand-card) * 0.92);
+}
+
+
 /* ------------------------------------------------------------ narrow screens */
 
 @media (max-width: 1500px) {
-  .board { grid-template-columns: 226px minmax(0, 1fr) 286px; }
+  .board { grid-template-columns: minmax(0, 1fr) 276px; }
 }
 
-/* The mat never shrinks for the reader; the reader goes first. */
 @media (max-width: 1280px) {
-  .board { grid-template-columns: minmax(0, 1fr) 264px; }
-  .peek { display: none; }
+  .board { grid-template-columns: minmax(0, 1fr) 252px; --peek-w: 232px; }
 }
 
 

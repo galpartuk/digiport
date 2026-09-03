@@ -2,18 +2,23 @@ import { useEffect, useState, type ReactNode } from 'react'
 import { imageUrl, type Card, type Meta } from '../cards'
 
 /**
- * The board's card reader: a panel docked down the left edge, opposite the
- * rail, holding whatever card the pointer last touched.
+ * The board's card reader: a drawer that slides in over the left edge of the
+ * mat, holding whatever card was last clicked.
  *
  * It is deliberately not `<CardDetail>`. That panel chases the cursor, which is
  * right for a deck-builder grid — you point at a thumbnail and the reader opens
  * beside it — and wrong for a playmat, where the thing it opens over is the
- * board you are trying to read. Docked, it never moves and never covers
- * anything.
+ * board you are trying to read. This one never moves.
  *
  * It is also **sticky**: the pointer leaving a card does not empty it. During a
  * game you hover a card, then look away to work out what to do about it, and a
  * reader that blanks the instant you move is worse than no reader at all.
+ *
+ * What changed is that it is no longer a *column*. A reference panel you
+ * consult a few times a turn was holding 17% of the screen open permanently,
+ * and the field is the thing that has to be big. So it is an overlay: clicking
+ * a card slides it in, Escape or the tab pushes it back out, and the mat keeps
+ * the width either way.
  */
 
 /** Highlights the [Bracketed] timings and ＜Keywords＞ the way the card prints them. */
@@ -46,9 +51,37 @@ type Props = {
    * *instance*, which is board state and not a card record.
    */
   actions?: ReactNode
+  /** Is the drawer slid in over the mat? */
+  open: boolean
+  /** The tab on the drawer's edge, which is the only part of it always on screen. */
+  onToggle: () => void
 }
 
-export function CardPeek({ card, meta, actions }: Props) {
+/**
+ * The drawer's shell. The tab lives outside the scrolling body so it stays
+ * reachable when the panel itself is parked off-screen.
+ */
+function Shell(
+  { open, onToggle, children }: { open: boolean; onToggle: () => void; children: ReactNode },
+) {
+  return (
+    <aside className={open ? 'peek open' : 'peek'}>
+      <button
+        type="button"
+        className="peek-tab"
+        aria-expanded={open}
+        title={open ? 'Close the card reader (Esc)' : 'Open the card reader'}
+        onClick={onToggle}
+      >
+        <span className="peek-tab-mark">{open ? '‹' : '›'}</span>
+        <span className="peek-tab-label">Card</span>
+      </button>
+      <div className="peek-scroll">{children}</div>
+    </aside>
+  )
+}
+
+export function CardPeek({ card, meta, actions, open, onToggle }: Props) {
   const [attempt, setAttempt] = useState(0)
 
   // A new card starts its own image-fallback walk.
@@ -56,12 +89,12 @@ export function CardPeek({ card, meta, actions }: Props) {
 
   if (!card) {
     return (
-      <aside className="peek">
+      <Shell open={open} onToggle={onToggle}>
         <div className="peek-idle">
           <div className="peek-idle-card" />
           <p>Click any card on the mat — in a hand, in play, in a trash — and it opens here.</p>
         </div>
-      </aside>
+      </Shell>
     )
   }
 
@@ -71,7 +104,7 @@ export function CardPeek({ card, meta, actions }: Props) {
   if (card.dp !== undefined) stats.push(['DP', card.dp.toLocaleString('en-US')])
 
   return (
-    <aside className="peek">
+    <Shell open={open} onToggle={onToggle}>
       <div className="peek-art">
         <img
           src={imageUrl(card, meta, attempt)}
@@ -151,6 +184,6 @@ export function CardPeek({ card, meta, actions }: Props) {
           <div className="peek-label warn">{card.restriction}</div>
         )}
       </div>
-    </aside>
+    </Shell>
   )
 }
