@@ -210,14 +210,29 @@ describe('draw', () => {
     expect(s.players[0].hand.every((c) => !c.faceDown)).toBe(true)
   })
 
-  it('loses the game when the deck runs out', () => {
+  // 1-2-3-2: the loss is specifically "can't draw a card during your DRAW
+  // PHASE". An empty deck on its own is not a loss.
+  it('loses the game only when the draw phase cannot draw', () => {
+    const empty: GameState = {
+      ...game,
+      phase: 'unsuspend',
+      turn: 3,
+      players: [{ ...game.players[0], deck: [] }, game.players[1]],
+    }
+    const s = apply(empty, act.nextPhase(0))
+    expect(s.phase).toBe('draw')
+    expect(s.winner).toBe(1)
+    expect(s.log.at(-1)!.text).toMatch(/cannot draw in the draw phase/)
+  })
+
+  it('does not lose the game when an effect draws from an empty deck', () => {
     const empty: GameState = {
       ...game,
       players: [{ ...game.players[0], deck: [] }, game.players[1]],
     }
     const s = apply(empty, act.draw(0, 1))
-    expect(s.winner).toBe(1)
-    expect(s.log.at(-1)!.text).toMatch(/cannot draw/)
+    expect(s.winner).toBeNull()
+    expect(s.log.at(-1)!.text).toMatch(/no cards left to draw/)
   })
 
   it('locks the board once someone has won', () => {
@@ -335,6 +350,29 @@ describe('digivolve and de-digivolve', () => {
     s = apply(s, act.digivolve(0, target.iid, fromHand.iid))
     return { s, iid: target.iid, bottomId, topId }
   }
+
+  // 8-1-3-3: the digivolution procedure ends by drawing 1 card.
+  it('draws a card, because digivolving does', () => {
+    const s = playToBattle(game, 0)
+    const before = s.players[0].hand.length
+    const target = s.players[0].battle[0].iid
+    const after = apply(s, act.digivolve(0, target, s.players[0].hand[0].iid))
+    // One card left the hand to digivolve, one was drawn: net unchanged.
+    expect(after.players[0].hand).toHaveLength(before)
+    expect(after.log.some((e) => /draws 1/.test(e.text))).toBe(true)
+  })
+
+  // 8-1-2-8: "Digivolution is also possible in situations where a draw isn't
+  // possible. In such cases, the digivolution processing is performed without
+  // drawing a card."
+  it('still digivolves with an empty deck, and does not lose the game', () => {
+    let s = playToBattle(game, 0)
+    s = { ...s, players: [{ ...s.players[0], deck: [] }, s.players[1]] }
+    const target = s.players[0].battle[0].iid
+    const after = apply(s, act.digivolve(0, target, s.players[0].hand[0].iid))
+    expect(after.winner).toBeNull()
+    expect(after.players[0].battle[0].stack).toHaveLength(1)
+  })
 
   it('keeps the instance, its suspension, DP and attachments, and grows the stack', () => {
     const { s, iid, bottomId, topId } = stacked()

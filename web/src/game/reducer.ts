@@ -432,6 +432,11 @@ export function apply(state: GameState, action: Action): GameState {
       under.faceDown = false
       log(next, action.by, `${nameOf(next, action.by)} digivolves into ${top.cardId} ` +
         `(${under.stack.length} source${under.stack.length === 1 ? '' : 's'})`)
+      // 8-1-3-3: the digivolution procedure ends by drawing 1. It is part of
+      // digivolving, not a separate act, and it applies to DNA (8-2-3-3), Burst
+      // (8-3-3-4) and App Fusion (8-4-3-3) too. An empty deck is not a loss
+      // here (8-1-2-8) — the digivolution simply happens without the draw.
+      drawCards(next, action.by, 1)
       break
     }
 
@@ -583,7 +588,7 @@ export function apply(state: GameState, action: Action): GameState {
       log(next, action.by, `${nameOf(next, action.by)} enters the ${next.phase} phase`)
       // The player who goes first does not draw on the very first turn.
       if (next.phase === 'draw' && !(next.turn === 1 && action.by === next.firstPlayer)) {
-        drawCards(next, action.by, 1)
+        drawCards(next, action.by, 1, true)
       }
       break
     }
@@ -721,14 +726,30 @@ function describe(card: CardInstance, from: Zone, to: Zone): string {
   return secret ? 'a card' : card.cardId
 }
 
-function drawCards(state: GameState, player: PlayerId, n: number) {
+/**
+ * Draw n cards.
+ *
+ * `inDrawPhase` decides whether running out is fatal. Comprehensive rules
+ * 1-2-3-2: you lose when your opponent "has 0 cards in their deck and can't
+ * draw a card during your opponent's DRAW PHASE" — an empty deck on its own is
+ * not a loss. An effect that says <Draw 1> with nothing left simply draws
+ * nothing, and 8-1-2-8 says the same of the digivolution draw: "Digivolution is
+ * also possible in situations where a draw isn't possible. In such cases, the
+ * digivolution processing is performed without drawing a card."
+ */
+function drawCards(state: GameState, player: PlayerId, n: number,
+                   inDrawPhase = false) {
   const me = state.players[player]
   let drawn = 0
   for (let i = 0; i < n; i++) {
     if (!me.deck.length) {
-      state.winner = other(player)
-      log(state, 'system', `${nameOf(state, player)} cannot draw — ` +
-        `${nameOf(state, state.winner)} wins`)
+      if (inDrawPhase) {
+        state.winner = other(player)
+        log(state, 'system', `${nameOf(state, player)} cannot draw in the draw ` +
+          `phase — ${nameOf(state, state.winner)} wins`)
+      } else {
+        log(state, 'system', `${nameOf(state, player)} has no cards left to draw`)
+      }
       return
     }
     const card = me.deck.shift()!
