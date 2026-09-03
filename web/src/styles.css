@@ -828,17 +828,30 @@ a.btn {
   /* How much of each security card's edge shows in the fan. */
   --sec-step: max(5px, calc(var(--pile-h) * 0.1));
   --mat-rule: rgb(120 165 210 / 0.13);
-  /* How wide the reader is when it slides in. */
+  /* How wide the reader is when open. Folded it collapses to its handle. */
   --peek-w: 262px;
+  --peek-tab-w: 22px;
 
   position: relative;
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 300px;
+  /*
+    Reader | mat | rail. The reader is a COLUMN, not an overlay: it is open by
+    default and the field reflows around it, so nothing it shows is bought by
+    covering cards. Folding it hands the 262px to the mat rather than merely
+    uncovering what was underneath.
+
+    fit.ts has a ResizeObserver on the battle zone, so the field re-measures
+    itself on every fold without anything here telling it to.
+  */
+  grid-template-columns: var(--peek-w) minmax(0, 1fr) 300px;
   height: 100%;
   min-height: 0;
   background:
     radial-gradient(1500px 760px at 50% 50%, #111d2f 0%, #0a1019 58%, var(--bg) 100%);
+  transition: grid-template-columns 0.18s ease;
 }
+
+.board.peek-folded { grid-template-columns: var(--peek-tab-w) minmax(0, 1fr) 300px; }
 
 .board-main {
   position: relative;
@@ -2282,24 +2295,14 @@ a.btn {
   the whole point is to read a card while you think about it.
 */
 .peek {
-  position: absolute;
-  left: 0;
-  top: 0;
-  bottom: 0;
-  width: var(--peek-w);
-  /* Above the pile browser's scrim: reading a card is the point of opening one. */
-  z-index: 56;
+  position: relative;
+  min-width: 0;
   display: flex;
   flex-direction: column;
   min-height: 0;
   background: var(--panel);
   border-right: 1px solid var(--line);
-  box-shadow: 12px 0 34px rgb(0 0 0 / 0.55);
-  transform: translateX(-100%);
-  transition: transform 0.18s ease;
 }
-
-.peek.open { transform: none; }
 
 /* The scrolling body. The tab has to sit outside it to stay reachable. */
 .peek-scroll {
@@ -2313,8 +2316,8 @@ a.btn {
 }
 
 /*
-  The only part of the drawer that is always on screen: a handle on its outer
-  edge, which rides out with the panel when it opens.
+  The handle. It rides the panel's outer edge in both states, so the control
+  that folds the reader is always in the same place on screen.
 */
 .peek-tab {
   position: absolute;
@@ -2346,8 +2349,10 @@ a.btn {
   writing-mode: vertical-rl;
 }
 
-/* Parked, the drawer's own contents must not be reachable by tab or pointer. */
+/* Folded, the reader's contents must not be reachable by tab or pointer. */
 .peek:not(.open) .peek-scroll { visibility: hidden; }
+
+.peek:not(.open) { border-right-color: transparent; background: none; }
 
 .peek-art {
   border-radius: 9px;

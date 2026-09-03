@@ -110,11 +110,13 @@ function DropChip({ id, label }: { id: string; label: string }) {
  * gives it thickness, the tag under it names the zone and carries the count.
  */
 function Pile(
-  { dropId, disabled, label, count, faceCardId, onClick, title, tone }:
+  { dropId, disabled, label, count, faceCardId, onClick, title, tone, onMenu }:
   {
     dropId: string; disabled?: boolean; label: string; count: number
     faceCardId?: string | null; onClick?: () => void; title?: string
     tone?: 'deck' | 'trash' | 'egg'
+    /** Right-click menu for the pile itself, as opposed to a card in it. */
+    onMenu?: (e: React.MouseEvent) => void
   },
 ) {
   const ui = useUi()
@@ -135,6 +137,7 @@ function Pile(
         if (faceCardId) ui.peekCard(faceCardId)
         onClick?.()
       }}
+      onContextMenu={onMenu ? (e) => { e.preventDefault(); onMenu(e) } : undefined}
     >
       <span className="pile-face">
         {faceCardId ? <Art cardId={faceCardId} index={ui.index} /> : null}
@@ -151,13 +154,14 @@ function Pile(
  * never a set of handles.
  */
 function SecurityFan(
-  { dropId, disabled, cards, onClick, title, anchor, aimed }:
+  { dropId, disabled, cards, onClick, title, anchor, aimed, onMenu }:
   {
     dropId: string; disabled?: boolean; cards: ViewCard[]
     onClick?: () => void; title?: string
     /** Where the attack arrow lands when the target is the player. */
     anchor?: string
     aimed?: boolean
+    onMenu?: (e: React.MouseEvent) => void
   },
 ) {
   const { setNodeRef, isOver } = useDroppable({ id: dropId, disabled })
@@ -171,6 +175,7 @@ function SecurityFan(
         'sec-zone', !disabled && isOver ? 'over' : '', aimed ? 'aimed' : '',
       ].filter(Boolean).join(' ')}
       onClick={onClick}
+      onContextMenu={onMenu ? (e) => { e.preventDefault(); onMenu(e) } : undefined}
       title={title}
     >
       {/*
@@ -407,6 +412,8 @@ type SeatProps = {
   onDeck: () => void
   onSecurity?: () => void
   onTrash: () => void
+  /** Right-click on a PILE — the deck, the security fan, the egg deck. */
+  onPileMenu: (pile: 'deck' | 'security' | 'eggDeck', e: React.MouseEvent) => void
   securityTitle: string
   /** This seat's hand. It rides in the outer band, at the screen edge. */
   hand: ReactNode
@@ -536,6 +543,7 @@ function Seat(p: SeatProps) {
             label="Deck"
             count={p.player.deck.length}
             onClick={p.onDeck}
+            onMenu={(e) => p.onPileMenu('deck', e)}
             title={mine ? 'Click to draw a card' : "Opponent's deck"}
           />
           <SecurityFan
@@ -545,6 +553,7 @@ function Seat(p: SeatProps) {
             anchor={`player-${p.who}`}
             aimed={p.aimed}
             onClick={p.onSecurity}
+            onMenu={(e) => p.onPileMenu('security', e)}
             title={p.securityTitle}
           />
           <Pile
@@ -581,6 +590,7 @@ function Seat(p: SeatProps) {
               label="Digi-Eggs"
               count={p.player.eggDeck.length}
               onClick={canHatch ? p.onHatch : undefined}
+              onMenu={(e) => p.onPileMenu('eggDeck', e)}
               title={
                 !mine ? 'Digi-Egg deck (face down)'
                   : p.player.breeding.length ? 'The breeding area already holds a card'
@@ -766,7 +776,28 @@ export function Board({ view, seat, index, dispatch, onUndo, onExit, refused }: 
    * because a reference panel you consult a few times a turn should not be
    * holding a sixth of the screen open while you play.
    */
-  const [peekOpen, setPeekOpen] = useState(false)
+  /*
+    The card reader is OPEN by default. It is a column the field reflows around,
+    not an overlay, so an open reader costs the mat width rather than covering
+    cards -- which means there is no reason to start it hidden. The choice is
+    remembered like the row toggle.
+  */
+  const [peekOpen, setPeekOpen] = useState(() => {
+    try {
+      return window.localStorage.getItem('digiport.board.reader') !== 'folded'
+    } catch {
+      return true
+    }
+  })
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem('digiport.board.reader', peekOpen ? 'open' : 'folded')
+    } catch {
+      // A private window refuses storage; the reader still works, it just
+      // forgets the preference.
+    }
+  }, [peekOpen])
   /** Are the keyboard hints unfolded? Onboarding text, not furniture. */
   const [showKeys, setShowKeys] = useState(false)
   /**
@@ -778,6 +809,13 @@ export function Board({ view, seat, index, dispatch, onUndo, onExit, refused }: 
   /** The special-rule picker: which card, and which of its rules. */
   const [rulePick, setRulePick] = useState<{ target: MenuTarget; spec: RuleSpec } | null>(null)
   const [menu, setMenu] = useState<{ target: MenuTarget; x: number; y: number } | null>(null)
+  /**
+   * The pile menus are separate state from the card menu: a card's items are
+   * derived from the card, a pile's are built where the pile is right-clicked
+   * because there is no card to derive them from.
+   */
+  const [pileMenuState, setPileMenuState] =
+    useState<{ x: number; y: number; items: MenuItem[] } | null>(null)
   const [dragging, setDragging] = useState<DragData | null>(null)
   const [chat, setChat] = useState('')
   const [confirmConcede, setConfirmConcede] = useState(false)
@@ -892,18 +930,12 @@ export function Board({ view, seat, index, dispatch, onUndo, onExit, refused }: 
     return () => window.removeEventListener('keydown', onKey)
   }, [dispatch, onUndo, seat])
 
-  /**
-   * Escape pushes the reader back out of the way. It waits its turn: the trash
-   * browser, the rule picker and the context menus all close on Escape too and
-   * they are on top, so the drawer only takes the key when nothing is over it.
-   */
-  const overlayUp = browsing !== null || rulePick !== null || menu !== null || dropChoice !== null
-  useEffect(() => {
-    if (!peekOpen || overlayUp) return
-    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setPeekOpen(false) }
-    window.addEventListener('keydown', onKey)
-    return () => window.removeEventListener('keydown', onKey)
-  }, [peekOpen, overlayUp])
+  /*
+    Escape used to push the reader out of the way, back when it was an overlay
+    lying across the mat. It is a column now and covers nothing, so the key is
+    left to the things that genuinely are overlays -- the trash browser, the
+    rule picker and the context menus. Folding it is the tab's job.
+  */
 
   // Newest at the bottom, always in view.
   const logCount = view.log.length
@@ -1001,6 +1033,73 @@ export function Board({ view, seat, index, dispatch, onUndo, onExit, refused }: 
     if (view.phase !== 'main') return
     setChecking(true)
     dispatch(act.securityCheck(seat))
+  }
+
+  /**
+   * Right-click on a pile. The piles carry real actions that had no home: the
+   * reducer has always had `shuffleSecurity` and `revealTop` with nothing on
+   * screen to fire them, and hunting the rail for something you are pointing at
+   * is the wrong way round.
+   *
+   * Only what is actually legal is offered. Your own security is masked even
+   * from you (3-7-2), so there is nothing here that names a card in it —
+   * shuffling needs no card, which is why it is the one thing you can do.
+   */
+  const pileMenu = (pile: 'deck' | 'security' | 'eggDeck', who: PlayerId,
+                    e: React.MouseEvent) => {
+    const mine = who === seat
+    const items: MenuItem[] = []
+
+    if (pile === 'deck') {
+      const n = view.players[who].deck.length
+      items.push({ kind: 'title', label: `${mine ? 'Your' : "Opponent's"} deck — ${n}` })
+      if (mine) {
+        items.push({ kind: 'item', label: 'Draw 1', run: () => dispatch(act.draw(seat, 1)) })
+        items.push({ kind: 'sep' })
+        for (const count of [1, 2, 3, 4, 5]) {
+          items.push({
+            kind: 'item',
+            label: `Reveal top ${count}`,
+            run: () => dispatch(act.revealTop(seat, count)),
+          })
+        }
+        items.push({ kind: 'sep' })
+        items.push({ kind: 'item', label: 'Shuffle deck', run: () => dispatch(act.shuffleDeck(seat)) })
+      }
+    }
+
+    if (pile === 'security') {
+      const n = view.players[who].security.length
+      items.push({ kind: 'title', label: `${mine ? 'Your' : "Opponent's"} security — ${n}` })
+      if (mine) {
+        // 3-7-2 hides your own security from you, so there is no per-card
+        // action to offer. Shuffling names no card and is what <Recovery> and
+        // the effects that reorder security actually need.
+        items.push({
+          kind: 'item',
+          label: 'Shuffle security',
+          run: () => dispatch(act.shuffleSecurity(seat)),
+        })
+      } else if (view.phase === 'main') {
+        items.push({ kind: 'item', label: 'Check security', run: checkSecurity })
+      } else {
+        items.push({ kind: 'title', label: 'Security checks happen in the main phase' })
+      }
+    }
+
+    if (pile === 'eggDeck') {
+      const me = view.players[who]
+      items.push({ kind: 'title', label: `${mine ? 'Your' : "Opponent's"} egg deck — ${me.eggDeck.length}` })
+      if (mine) {
+        const blocked = me.breeding.length > 0 ? 'Breeding area is occupied'
+          : me.eggDeck.length === 0 ? 'Egg deck is empty' : null
+        if (blocked) items.push({ kind: 'title', label: blocked })
+        else items.push({ kind: 'item', label: 'Hatch', run: () => dispatch(act.hatch(seat)) })
+      }
+    }
+
+    if (items.every((i) => i.kind !== 'item')) return
+    setPileMenuState({ x: e.clientX, y: e.clientY, items })
   }
 
   // ------------------------------------------------------------ attack assists
@@ -1230,7 +1329,7 @@ export function Board({ view, seat, index, dispatch, onUndo, onExit, refused }: 
         onDragEnd={onDragEnd}
         onDragCancel={() => setDragging(null)}
       >
-        <div className={peekOpen ? 'board peek-open' : 'board'}>
+        <div className={peekOpen ? 'board peek-open' : 'board peek-folded'}>
           <CardPeek
             card={peek}
             meta={index.meta}
@@ -1254,6 +1353,7 @@ export function Board({ view, seat, index, dispatch, onUndo, onExit, refused }: 
               onDeck={() => undefined}
               onSecurity={checkSecurity}
               onTrash={() => setBrowsing(foeId)}
+              onPileMenu={(pile, e) => pileMenu(pile, foeId, e)}
               securityTitle={view.phase === 'main'
                 ? 'Check security — reveals their top card'
                 : 'Security checks happen in the main phase'}
@@ -1334,6 +1434,7 @@ export function Board({ view, seat, index, dispatch, onUndo, onExit, refused }: 
               onHatch={() => dispatch(act.hatch(seat))}
               onDeck={() => dispatch(act.draw(seat, 1))}
               onTrash={() => setBrowsing(seat)}
+              onPileMenu={(pile, e) => pileMenu(pile, seat, e)}
               securityTitle="Your security stack — face down, spread so the count reads"
               nameplate={seatLine(seat)}
               hand={(
@@ -1803,6 +1904,15 @@ export function Board({ view, seat, index, dispatch, onUndo, onExit, refused }: 
           y={dropChoice.y}
           items={dropItems(dropChoice)}
           onClose={() => setDropChoice(null)}
+        />
+      )}
+
+      {pileMenuState && (
+        <ContextMenu
+          x={pileMenuState.x}
+          y={pileMenuState.y}
+          items={pileMenuState.items}
+          onClose={() => setPileMenuState(null)}
         />
       )}
 
