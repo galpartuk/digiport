@@ -773,15 +773,35 @@ a.btn {
 .board {
   /*
     The mat is a fixed stack of proportional rows, so card size has to come from
-    the viewport rather than a constant: at 900px of height a 76px card pushed
-    the second half off the bottom of the screen. 7.6 is the mat's height
-    measured in card-heights (two halves at ~2.6, two hands at 1, gauge and
-    nameplates), and 0.715 is 430/601 — a card's aspect ratio.
+    the viewport rather than a constant; 0.715 is 430/601, a card's aspect ratio.
+
+    The divisor is the mat's height measured in card-heights, and it is the
+    number that decides whether a Digimon is readable. It used to be 7.6, which
+    on a 674px viewport produced a 44px card — two Digimon at that size are the
+    same picture. Three things bought it down to ~4.2:
+
+      · the opponent's hand is face down, so it is a strip of backs (0.34) and
+        not a full row of cards (1.0);
+      · the rail carries the deck and the trash side by side with the security
+        fan under them, so a half costs ~1.4 card-heights instead of ~2.9;
+      · the memory gauge and its cost strip share one line.
+
+    What is traded away: the battle areas no longer reserve room for a full
+    second row, and scroll internally when the field gets crowded (they always
+    could — see .zone.battle). Cards on the mat stay readable; a crowded field
+    scrolls. That is the right way round.
   */
-  --bcard: clamp(38px, calc((100vh - 220px) / 7.6 * 0.715), 86px);
+  --bcard: clamp(64px, calc((100vh - 200px) / 4.2 * 0.715), 112px);
   --bcard-h: calc(var(--bcard) * 601 / 430);
+  /*
+    The rail's piles are not play cards — nothing is read off them, they are
+    handles onto a deck, a trash and a security stack — so they run smaller than
+    the cards on the mat and give the height back to the field.
+  */
+  --pile: calc(var(--bcard) * 0.78);
+  --pile-h: calc(var(--pile) * 601 / 430);
   /* How much of each security card's edge shows in the fan. */
-  --sec-step: max(6px, calc(var(--bcard-h) * 0.1));
+  --sec-step: max(6px, calc(var(--pile-h) * 0.1));
   --mat-rule: rgb(120 165 210 / 0.13);
 
   display: grid;
@@ -881,19 +901,39 @@ a.btn {
 
 /* ----------------------------------------------------- the rail: deck / security / trash */
 
+/*
+  Deck and trash side by side, the security fan spread underneath them. Stacked
+  in one column the rail was the tallest thing on either half — nearly three
+  card-heights of furniture framing a field one card tall — and every card on
+  the mat was shrunk to make room for it. Two columns costs width the mat has
+  and gives back the height it does not.
+*/
 .mat-rail {
   grid-area: rail;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: space-between;
-  gap: 5px;
-  width: calc(var(--bcard) + 12px);
+  display: grid;
+  grid-template-columns: auto auto;
+  grid-template-areas:
+    'deck trash'
+    'sec  sec';
+  justify-content: center;
+  align-content: space-between;
+  justify-items: center;
+  gap: 6px;
   min-height: 0;
 }
 
-/* Mirrored: the opponent's deck sits furthest from the gauge, like mine. */
-.half.foe .mat-rail { flex-direction: column-reverse; }
+/* Mirrored: the opponent's piles sit furthest from the gauge, like mine. */
+.half.foe .mat-rail {
+  grid-template-areas:
+    'sec  sec'
+    'deck trash';
+}
+
+.mat-rail > .pile-deck { grid-area: deck; }
+
+.mat-rail > .pile-trash { grid-area: trash; }
+
+.mat-rail > .sec-zone { grid-area: sec; }
 
 /* ------------------------------------------- the play region: stage / raising / battle */
 
@@ -1171,29 +1211,62 @@ a.btn {
   border: 2px solid #35507f;
 }
 
-/* Digivolution sources peek out from underneath, one edge per source. */
-.stack-edges {
-  position: absolute;
-  left: 0;
-  right: 0;
-  bottom: -4px;
-  display: flex;
-  flex-direction: column-reverse;
-  pointer-events: none;
+/*
+  §4-7-4: "The bottom cards of a stack are spread out so that inherited effects
+  are visible." Three-pixel edges and a count were not that — they made a stack
+  opaque, which is the one thing the rule forbids. Each source is a whole card
+  slid down by a band and drawn behind the one above it, so what shows is the
+  *bottom* of every source: on a Digimon card, exactly where the inherited
+  effect is printed. Clicking a band opens that source in the docked reader.
+
+  The card's own art has to be positioned too, or it would paint underneath its
+  own sources: static content is painted below positioned descendants, and the
+  spread is positioned. Everything here is in DOM order — sources, then the
+  card, then its plates — so paint order is the physical stacking order.
+*/
+.bcard > img { position: relative; }
+
+.bcard.stacked {
+  /* A deep stack tightens its spread rather than growing without bound. */
+  --src-step: max(9px, min(calc(var(--bcard-h) * 0.15), calc(var(--bcard-h) * 0.6 / var(--n))));
+  margin-bottom: calc(var(--src-step) * var(--n));
 }
 
-.stack-edges > i {
-  height: 3px;
-  margin-top: 1px;
-  border-radius: 0 0 3px 3px;
-  background: #38507a;
-  box-shadow: 0 1px 0 rgb(0 0 0 / 0.4);
+/* Mirrored, a stack spreads towards its own owner, so upwards. */
+.half.foe .bcard.stacked {
+  margin-bottom: 0;
+  margin-top: calc(var(--src-step) * var(--n));
 }
+
+.src-card {
+  position: absolute;
+  left: 0;
+  top: calc(var(--src-step) * var(--o));
+  width: 100%;
+  height: 100%;
+  border-radius: 5px;
+  overflow: hidden;
+  background: #121a27;
+  box-shadow: 0 2px 4px rgb(0 0 0 / 0.55);
+  cursor: pointer;
+}
+
+.half.foe .src-card { top: auto; bottom: calc(var(--src-step) * var(--o)); }
+
+.src-card::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: 5px;
+  box-shadow: inset 0 0 0 1px rgb(0 0 0 / 0.55);
+}
+
+.src-card:hover::after { box-shadow: inset 0 0 0 2px var(--accent); }
 
 .stack-count {
   position: absolute;
   left: 2px;
-  bottom: 2px;
+  top: 2px;
   background: rgb(8 16 28 / 0.85);
   color: var(--accent);
   font-size: 9px;
@@ -1202,24 +1275,28 @@ a.btn {
   border-radius: 3px;
 }
 
-/* Plug-ins and link cards sit sideways off the right edge. */
-.attached-tabs {
+/*
+  §4-9: a link card is plugged in sideways and is not a stacked card, so it is
+  drawn as a card turned on its side off the right edge rather than as another
+  layer of the stack. §4-9-5 allows one per card, so one is what fits.
+*/
+.link-card {
   position: absolute;
-  right: -5px;
-  top: 6px;
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  pointer-events: none;
+  /* One per card is the rule; a second would be an effect nobody has printed. */
+  top: calc(20% + var(--o) * 16%);
+  right: calc(var(--bcard) * -0.22);
+  width: calc(var(--bcard) * 0.42);
+  height: calc(var(--bcard-h) * 0.42);
+  border-radius: 4px;
+  overflow: hidden;
+  transform: rotate(90deg);
+  box-shadow: 0 0 0 1px var(--c-purple), 0 3px 8px rgb(0 0 0 / 0.6);
+  cursor: pointer;
 }
 
-.attached-tabs > i {
-  width: 9px;
-  height: 14px;
-  border-radius: 2px;
-  background: var(--c-purple);
-  box-shadow: 0 1px 3px rgb(0 0 0 / 0.6);
-}
+.link-card:hover { box-shadow: 0 0 0 2px var(--accent), 0 4px 12px rgb(0 0 0 / 0.7); }
+
+.link-card img { width: 100%; height: 100%; object-fit: cover; display: block; }
 
 .badge-row {
   position: absolute;
@@ -1258,7 +1335,7 @@ a.btn {
 .pile {
   position: relative;
   display: block;
-  width: var(--bcard);
+  width: var(--pile);
   flex: 0 0 auto;
   padding: 0;
   border: 0;
@@ -1285,8 +1362,8 @@ a.btn {
 
 .pile-face {
   position: relative;
-  width: var(--bcard);
-  height: var(--bcard-h);
+  width: var(--pile);
+  height: var(--pile-h);
   border-radius: 5px;
   overflow: hidden;
   display: grid;
@@ -1343,7 +1420,7 @@ a.btn {
 .sec-zone {
   position: relative;
   display: block;
-  width: var(--bcard);
+  width: var(--pile);
   flex: 0 0 auto;
   padding: 0;
   border: 0;
@@ -1355,15 +1432,15 @@ a.btn {
   display: flex;
   flex-direction: column;
   align-items: stretch;
-  width: var(--bcard);
+  width: var(--pile);
 }
 
 /* Mirrored the fan hangs the other way; the cards are blank so a flip is safe. */
 .half.foe .sec-fan { transform: scaleY(-1); }
 
 .sec-card {
-  height: calc(var(--bcard-h) * 0.4);
-  margin-top: calc(var(--sec-step) - var(--bcard-h) * 0.4);
+  height: calc(var(--pile-h) * 0.4);
+  margin-top: calc(var(--sec-step) - var(--pile-h) * 0.4);
   border-radius: 4px;
   background: linear-gradient(180deg, #223150, #151f33);
   border: 1px solid #33456a;
@@ -1374,7 +1451,7 @@ a.btn {
 .sec-card:first-child { margin-top: 0; }
 
 .sec-card.top {
-  height: calc(var(--bcard-h) * 0.52);
+  height: calc(var(--pile-h) * 0.52);
   background:
     radial-gradient(circle at 50% 60%, rgb(53 200 240 / 0.1), transparent 65%),
     repeating-linear-gradient(135deg, #1b2740 0 6px, #17223a 6px 12px);
@@ -1383,8 +1460,8 @@ a.btn {
 
 .sec-empty {
   display: block;
-  width: var(--bcard);
-  height: calc(var(--bcard-h) * 0.52);
+  width: var(--pile);
+  height: calc(var(--pile-h) * 0.52);
   border: 1px dashed rgb(120 165 210 / 0.2);
   border-radius: 5px;
 }
@@ -1465,6 +1542,28 @@ a.btn {
 .hand-strip > * { margin-left: calc(var(--bcard) * -0.24); }
 
 .hand-strip > *:first-child { margin-left: 0; }
+
+/*
+  The opponent's hand is face down (§3-5-3) — there is nothing on those cards to
+  read, only how many there are, and the nameplate already says that. So it is a
+  strip of backs a third of a card deep. A full row of card backs was costing a
+  whole card-height of the mat to say a number.
+*/
+.hand-strip.foe-hand {
+  align-items: flex-start;
+  min-height: calc(var(--bcard-h) * 0.34 + 8px);
+  padding-bottom: 0;
+}
+
+.hand-strip.foe-hand .bcard {
+  height: calc(var(--bcard-h) * 0.34);
+  cursor: default;
+  margin-bottom: 0;
+}
+
+.hand-strip.foe-hand .bcard:hover { transform: none; }
+
+.hand-strip.foe-hand .bcard.down::after { width: 26%; height: 34%; }
 
 .hand-strip .bcard { box-shadow: 0 5px 14px rgb(0 0 0 / 0.65); }
 
@@ -1574,8 +1673,8 @@ a.btn {
 .gauge { display: flex; gap: 2px; }
 
 .gauge-stop {
-  width: 21px;
-  height: 21px;
+  width: 18px;
+  height: 18px;
   border-radius: 50%;
   border: 1px solid var(--line);
   background: #0d1421;
@@ -1621,7 +1720,7 @@ a.btn {
 
 .cost-strip { display: flex; align-items: center; gap: 3px; }
 
-.cost-strip .btn { padding: 2px 7px; font-size: 11px; min-width: 25px; }
+.cost-strip .btn { padding: 1px 5px; font-size: 11px; min-width: 22px; }
 
 /* -------------------------------------------------------------------- rail */
 
@@ -1793,6 +1892,12 @@ a.btn {
 .ctx-menu button:hover { background: var(--accent); color: var(--accent-ink); }
 
 .ctx-menu hr { border: 0; border-top: 1px solid var(--line); margin: 4px 2px; }
+
+/*
+  The drop menu's labels name the rule they carry ("as the bottom digivolution
+  card"), and a label that wraps to two lines reads as two choices.
+*/
+.ctx-menu button { white-space: nowrap; }
 
 .ctx-menu .ctx-title {
   padding: 4px 9px 6px;
@@ -1991,12 +2096,18 @@ a.btn {
    assumed was a div.
    ========================================================================== */
 
-/* The cost strip sits under the gauge rather than beside it. */
+/*
+  The gauge and the pay strip share one line. Wrapped onto two they cost the mat
+  most of a card-height, and there is width for both: the strip only falls to a
+  second line on a genuinely narrow screen, where the room is there to spend.
+*/
 .gauge-row .cost-strip {
-  flex-basis: 100%;
+  flex-basis: auto;
   justify-content: center;
   align-items: center;
 }
+
+.gauge-row { gap: 10px; }
 
 /* A card id the payload has no record of, shown in place of missing art. */
 .bcard-id {
@@ -2219,7 +2330,12 @@ a.btn {
   border-bottom: 1px dashed rgb(120 165 210 / 0.16);
 }
 
-.brow.back .zone-cards { min-height: calc(var(--bcard-h) * 0.7); }
+/*
+  The back row keeps a landing strip, not a whole card of reserved space: rows
+  are a layout, and an empty one should not be charged to every card on the mat.
+  Tamers and Options put into it grow it, and the battle area scrolls.
+*/
+.brow.back .zone-cards { min-height: max(18px, calc(var(--bcard-h) * 0.3)); }
 
 .brow-tag {
   position: absolute;
@@ -2237,9 +2353,17 @@ a.btn {
 .half.foe .zone.battle { justify-content: flex-end; }
 
 /* The battle area fills to its edge, so its name plate needs the room. */
-.zone.battle { padding-top: 16px; }
+.zone.battle { padding-top: 14px; }
 
-.half.foe .zone.battle { padding-top: 6px; padding-bottom: 16px; }
+.half.foe .zone.battle { padding-top: 5px; padding-bottom: 14px; }
+
+/*
+  The field is the one place on the mat that scrolls: a crowded battle area is
+  worth a scrollbar, and shrinking every card on both halves to guarantee a
+  second row that is usually empty is not. Thin, so it costs the field 8px and
+  not a card.
+*/
+.zone.battle { scrollbar-width: thin; scrollbar-color: rgb(120 165 210 / 0.35) transparent; }
 
 .zone.battle > .battle-rows,
 .zone.battle > .zone-cards { flex: 0 0 auto; }

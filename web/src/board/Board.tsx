@@ -54,7 +54,7 @@ const PHASE_HINT: Record<string, string> = {
 /**
  * Drop-target ids are strings because dnd-kit compares them by identity. The
  * shape is `kind:zone[:position]`:
- *   card:<iid>       a card in play — digivolve, or attach with Shift
+ *   card:<iid>       a card in play — digivolve, place under, or link
  *   zone:<zone>      one of my own areas
  *   dz:<zone>:<pos>  a labelled chip from the floating strip
  *   off:<zone>       an opponent area; always disabled, present only so the
@@ -642,6 +642,31 @@ function digivolveOffer(card: Card | undefined): CostOffer | null {
   }
 }
 
+// ---------------------------------------------------------- the drop choice
+
+/**
+ * A card dropped onto another card, waiting for the player to say which of the
+ * three rules they meant by it.
+ *
+ * They are genuinely three different things, and only one of them used to be
+ * reachable without a modifier key:
+ *
+ *   · **Digivolve** (§8) puts the new card **on top**; the Digimon is
+ *     considered to change into it (§3-4-5), which is why it keeps its
+ *     suspended state and can still attack.
+ *   · **Place under** slides a card **beneath** another as a digivolution card
+ *     and the top card does not change — DigiXros (§7-2), Assembly (§7-3), and
+ *     effects like "place 1 of your opponent's level 3 or lower Digimon under
+ *     another Digimon as its bottom digivolution card" (§4-7-7). It takes a
+ *     position because those effects name one.
+ *   · **Link** (§4-9) plugs a card in sideways. It is not a stacked card at
+ *     all, and one card holds at most one (§4-9-5).
+ *
+ * A hidden modifier cannot express three things, and a player cannot discover
+ * one. So the drop asks.
+ */
+type DropChoice = { from: DragData; targetIid: Iid; x: number; y: number }
+
 // --------------------------------------------------------------------- board
 
 /**
@@ -668,6 +693,8 @@ export function Board({ view, seat, index, dispatch, onUndo, onExit, refused }: 
   const [targeting, setTargeting] = useState<Iid | null>(null)
   /** A cost the board noticed but will not pay on its own. See `CostOffer`. */
   const [offer, setOffer] = useState<CostOffer | null>(null)
+  /** A card dropped onto another card, waiting for its verb. See `DropChoice`. */
+  const [dropChoice, setDropChoice] = useState<DropChoice | null>(null)
   /**
    * Front row / back row. A layout preference, not game state — which is why it
    * is the one thing on this board that touches storage: it belongs to the
@@ -796,13 +823,27 @@ export function Board({ view, seat, index, dispatch, onUndo, onExit, refused }: 
 
     if (id.startsWith('card:')) {
       const targetIid = id.slice('card:'.length)
-      // Digivolving and attaching are both "my card onto my card" only.
-      if (!ownCard || targetIid === data.iid) return
-      const attaching = shift.current
-      dispatch(attaching
-        ? act.attach(seat, data.iid, targetIid)
-        : act.digivolve(seat, targetIid, data.iid))
-      if (!attaching) setOffer(digivolveOffer(index.byId.get(data.cardId)))
+      if (targetIid === data.iid) return
+      // Shift survives as a shortcut for the commonest of the three, but it is
+      // no longer the only way to reach anything.
+      if (shift.current && ownCard && (data.zone === 'hand' || data.zone === 'battle')) {
+        dispatch(act.attach(seat, data.iid, targetIid))
+        return
+      }
+      // Otherwise the drop asks which rule it meant, beside the card it landed
+      // on: `over.rect` is the target's box in viewport coordinates, which is
+      // where the player is already looking. It opens on the right of the card
+      // unless the rail is there, and then on the left — ContextMenu only knows
+      // how to clamp a menu of its own default width.
+      const r = e.over.rect
+      const wide = 262
+      const right = r.left + r.width + 10
+      setDropChoice({
+        from: data,
+        targetIid,
+        x: right + wide <= window.innerWidth ? right : Math.max(6, r.left - wide),
+        y: r.top,
+      })
       return
     }
 
@@ -858,6 +899,59 @@ export function Board({ view, seat, index, dispatch, onUndo, onExit, refused }: 
 
   const nameFor = (card: ViewCard | undefined) =>
     card?.cardId ? index.byId.get(card.cardId)?.name ?? card.cardId : 'a card'
+
+  /**
+   * The three things a drop onto a card can mean, offered as three lines.
+   *
+   * Only the ones the reducer will actually accept are listed, so nothing on
+   * this menu can produce a refusal: digivolving and linking are "my card onto
+   * my card" and read the card off a public zone, while placing under is the
+   * one of the three that may take the opponent's Digimon (§4-7-7) and so is
+   * offered for their cards too.
+   */
+  const dropItems = (choice: DropChoice): MenuItem[] => {
+    const { from, targetIid } = choice
+    const mine = from.owner === seat
+    const target = inPlay.get(targetIid)?.card
+    const moving = index.byId.get(from.cardId)?.name ?? from.cardId
+    const item = (label: string, run: () => void): MenuItem => ({ kind: 'item', label, run })
+    const items: MenuItem[] = [
+      { kind: 'title', label: `${moving} → ${nameFor(target)}` },
+    ]
+
+    // §8, §3-4-5: on top, and the Digimon changes into it.
+    if (mine && (from.zone === 'hand' || from.zone === 'reveal' || from.zone === 'battle')) {
+      items.push(item('Digivolve — the new card on top', () => {
+        dispatch(act.digivolve(seat, targetIid, from.iid))
+        setOffer(digivolveOffer(index.byId.get(from.cardId)))
+      }))
+    }
+
+    // §7-2 DigiXros, §7-3 Assembly, §4-7-7: underneath, and the top card stays.
+    items.push(
+      { kind: 'sep' },
+      item('Place under — top of the sources', () =>
+        dispatch(act.placeUnder(seat, from.iid, targetIid, 'top'))),
+      item('Place under — bottom of the sources', () =>
+        dispatch(act.placeUnder(seat, from.iid, targetIid, 'bottom'))),
+    )
+
+    // §4-9: sideways, not stacked, and at most one to a card (§4-9-5).
+    if (mine && (from.zone === 'hand' || from.zone === 'battle')) {
+      const linked = (target?.attached.length ?? 0) > 0
+      items.push(
+        { kind: 'sep' },
+        item(
+          linked ? 'Link — sideways (one is already linked)' : 'Link — plugged in sideways',
+          () => dispatch(act.attach(seat, from.iid, targetIid)),
+        ),
+      )
+    }
+
+    // Nothing has moved yet: the drop is only committed by picking a line.
+    items.push({ kind: 'sep' }, item('Cancel', () => undefined))
+    return items
+  }
 
   /** Printed DP plus every modifier on the instance, or null for a card with none. */
   const effectiveDp = (card: ViewCard | undefined): number | null => {
@@ -963,7 +1057,13 @@ export function Board({ view, seat, index, dispatch, onUndo, onExit, refused }: 
           <div className="board-main">
             <div className="edge">
               {seatLine(foeId)}
-              <DropField id={THEIRS('hand')} disabled className="hand-strip">
+              {/*
+                Their hand is face down (§3-5-3): there is nothing on it to
+                read and the nameplate already carries the count, so it is a
+                strip of backs rather than a full row of cards. That row was
+                costing the mat a whole card-height to say a number.
+              */}
+              <DropField id={THEIRS('hand')} disabled className="hand-strip foe-hand">
                 {foe.hand.map((c) => (
                   <BoardCard key={c.iid} card={c} zone="hand" owner={foeId} />
                 ))}
@@ -1377,7 +1477,9 @@ export function Board({ view, seat, index, dispatch, onUndo, onExit, refused }: 
               play to suspend or unsuspend it · <b>right-click</b> for attack, move and
               everything else.
               <br />
-              Drag onto a Digimon to digivolve, <kbd>Shift</kbd>+drag to attach.
+              Drag a card <b>onto</b> another and pick what you meant — digivolve on top,
+              place under as a source, or link it in sideways. <kbd>Shift</kbd>+drag
+              links straight away. Click a source under a Digimon to read it.
               <br />
               <kbd>D</kbd> draw · <kbd>S</kbd> shuffle · <kbd>R</kbd> reveal 1 ·{' '}
               <kbd>Space</kbd> next phase · <kbd>E</kbd> end turn · <kbd>Ctrl</kbd>+<kbd>Z</kbd> undo ·{' '}
@@ -1420,6 +1522,20 @@ export function Board({ view, seat, index, dispatch, onUndo, onExit, refused }: 
           owner={browsing}
           name={browsing === seat ? 'Your trash' : `${nameOf(browsing)}'s trash`}
           onClose={() => setBrowsing(null)}
+        />
+      )}
+
+      {/*
+        The drop asks rather than guessing. It is a menu and not a modal on
+        purpose: it opens beside the card the drop landed on, and pressing
+        Escape or clicking anywhere else leaves the board exactly as it was.
+      */}
+      {dropChoice && (
+        <ContextMenu
+          x={dropChoice.x}
+          y={dropChoice.y}
+          items={dropItems(dropChoice)}
+          onClose={() => setDropChoice(null)}
         />
       )}
 

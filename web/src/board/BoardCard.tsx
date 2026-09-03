@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, type CSSProperties } from 'react'
 import { createPortal } from 'react-dom'
 import { useDraggable, useDroppable } from '@dnd-kit/core'
 import { imageUrl, type CardIndex } from '../cards'
@@ -80,11 +80,38 @@ export function BoardCard(
   const cls = [
     'bcard',
     hidden ? 'down' : '',
+    card.stack.length > 0 ? 'stacked' : '',
     card.suspended ? 'suspended' : '',
     drag.isDragging ? 'dragging' : '',
     droppable && drop.isOver ? 'droptarget' : '',
     mark ? `mark-${mark}` : '',
   ].filter(Boolean).join(' ')
+
+  /*
+    §4-7-4: the bottom cards of a stack are spread out so that inherited effects
+    are visible. `--n` is the depth the spread has to fit into, and the CSS
+    tightens the step when a stack gets deep; `--o` is how many bands down one
+    source sits. Both are numbers, not lengths, because the mirrored half puts
+    the same offset on `bottom` instead of `top`.
+  */
+  const depth = { '--n': card.stack.length } as CSSProperties
+  const nameOf = (id: string) => ui.index.byId.get(id)?.name ?? id
+
+  /** A source or a link card: readable, clickable, and never actionable. */
+  const buried = (cardId: string, key: string, className: string, style: CSSProperties, label: string) => (
+    <span
+      key={key}
+      role="button"
+      tabIndex={-1}
+      className={className}
+      style={style}
+      title={label}
+      onClick={(e) => { e.stopPropagation(); ui.peekCard(cardId) }}
+      onKeyDown={(e) => { if (e.key === 'Enter') ui.peekCard(cardId) }}
+    >
+      <Art cardId={cardId} index={ui.index} alt={false} />
+    </span>
+  )
 
   /*
     Effective DP, which is printed DP plus every ±1000 the players have piled on.
@@ -102,6 +129,7 @@ export function BoardCard(
       type="button"
       ref={setRef}
       className={cls}
+      style={depth}
       /* The attack arrow finds its two endpoints by this attribute. */
       data-iid={card.iid}
       {...drag.listeners}
@@ -131,22 +159,41 @@ export function BoardCard(
       }}
       onMouseLeave={() => setFanned(null)}
     >
+      {/*
+        The sources come first and deepest first, so paint order is the physical
+        stacking order and every source's bottom band stays visible under the
+        card lying on it. `card.stack` is bottom first, so the last one is the
+        source directly under the top card and sits one band down.
+      */}
+      {card.stack.map((sourceId, i) => buried(
+        sourceId,
+        `s${i}-${sourceId}`,
+        'src-card',
+        { '--o': card.stack.length - i } as CSSProperties,
+        `${nameOf(sourceId)} — digivolution source ${i + 1} of ${card.stack.length}, bottom first`,
+      ))}
+
       {!hidden && <Art cardId={cardId} index={ui.index} />}
 
       {card.stack.length > 0 && (
-        <>
-          <div className="stack-edges">
-            {card.stack.map((_, i) => <i key={i} />)}
-          </div>
-          <div className="stack-count">{card.stack.length}</div>
-        </>
-      )}
-
-      {card.attached.length > 0 && (
-        <div className="attached-tabs">
-          {card.attached.map((a) => <i key={a.iid} />)}
+        <div
+          className="stack-count"
+          title={`${card.stack.length} digivolution source${card.stack.length === 1 ? '' : 's'} — click one to read it`}
+        >
+          {card.stack.length}
         </div>
       )}
+
+      {/* §4-9: a link card is plugged in sideways, and is not a stacked card. */}
+      {card.attached.map((a, i) => (a.cardId
+        ? buried(
+          a.cardId,
+          `a-${a.iid}`,
+          'link-card',
+          { '--o': i } as CSSProperties,
+          `${nameOf(a.cardId)} — link card (§4-9)`,
+        )
+        : null))}
 
       {showDp && (
         <span
